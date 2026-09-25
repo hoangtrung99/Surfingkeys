@@ -4,6 +4,7 @@ import {
 import {
     createNvimServer,
 } from './nvim.js';
+import installTabSwitcher from './tabSwitcher.js';
 import {
     _save,
     dictFromArray,
@@ -148,5 +149,6 @@ start({
     _applyProxySettings,
     _setNewTabUrl,
     _getContainerName,
-    _getContainers
+    _getContainers,
+    extendBackground: installTabSwitcher
 });

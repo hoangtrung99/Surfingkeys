@@ -152,6 +152,7 @@ function _initModules() {
 
     const api = createAPI(clipboard, insert, normal, hints, visual, front, _browser);
     createDefaultMappings(api, clipboard, insert, normal, hints, visual, front, _browser);
+    _browser.installTabSwitcher && _browser.installTabSwitcher(api, front);
     if (typeof(_browser.plugin) === "function") {
         _browser.plugin({ front });
     }

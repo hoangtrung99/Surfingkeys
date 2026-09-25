@@ -35,6 +35,7 @@ function modifyManifest(browser, mode, buffer) {
     } else {
         // chromium family
         manifest.manifest_version = 3;
+        Object.assign(manifest.commands, require('../src/background/tabSwitcher.commands.json'));
         manifest.permissions.push("proxy");
         manifest.permissions.push("tts");
         manifest.permissions.push("downloads.shelf");

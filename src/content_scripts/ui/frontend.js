@@ -26,6 +26,7 @@ import createAPI from '../common/api.js';
 import createDefaultMappings from '../common/default.js';
 import createOmnibar from './omnibar.js';
 import createCommands from './command.js';
+import createTabSwitcher from './tabSwitcher.js';
 
 const Front = (function() {
     const clipboard = createClipboard();
@@ -854,6 +855,7 @@ const Front = (function() {
         }
     }, { passive: false });
 
+    createTabSwitcher(self, showElement);
     return self;
 })();
 

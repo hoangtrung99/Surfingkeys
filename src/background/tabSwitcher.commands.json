@@ -1,0 +1,10 @@
+{
+    "commandPalette": {
+        "suggested_key": { "default": "Ctrl+Shift+P", "mac": "Command+Shift+P" },
+        "description": "Command palette: search open tabs, open a URL or search the web."
+    },
+    "tabSwitcher": {
+        "suggested_key": { "default": "Alt+Q", "mac": "Alt+Q" },
+        "description": "Visual tab switcher: hold Alt, press Q to move, release Alt to switch."
+    }
+}

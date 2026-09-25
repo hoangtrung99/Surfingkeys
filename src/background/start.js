@@ -2471,6 +2471,7 @@ function start(browser) {
             });
         }
     };
+    browser.extendBackground && browser.extendBackground(self, _response);
 }
 
 export {
