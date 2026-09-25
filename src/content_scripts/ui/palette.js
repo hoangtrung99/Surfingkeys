@@ -18,6 +18,11 @@ function hostOf(url) {
     }
 }
 
+// "ke hoach" finds "Kế hoạch": compare without diacritics (đ does not decompose).
+function fold(s) {
+    return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+}
+
 function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -61,13 +66,13 @@ export default function createPalette(omnibar, front, searchEngine) {
     }
 
     function matchTabs(query) {
-        const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length);
+        const terms = fold(query).split(/\s+/).filter((t) => t.length);
         if (!terms.length) {
             return tabs.slice();
         }
         const scored = [];
         tabs.forEach((t, i) => {
-            const title = (t.title || '').toLowerCase(), host = hostOf(t.url).toLowerCase(), url = (t.url || '').toLowerCase();
+            const title = fold(t.title || ''), host = hostOf(t.url).toLowerCase(), url = fold(t.url || '');
             let score = 0;
             for (const term of terms) {
                 if (title.startsWith(term)) {

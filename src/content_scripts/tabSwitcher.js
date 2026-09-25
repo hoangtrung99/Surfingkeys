@@ -96,6 +96,9 @@ export default function installTabSwitcher(api, front) {
     function openPalette() {
         front.command({action: 'togglePalette'});
         endTypeAhead();
+        if (isPanelOpen()) {
+            return;  // focus is already in the frame (and closing needs no hold at all)
+        }
         typing = true;
         typeAhead.enter(0, true);
         window.addEventListener('blur', endTypeAhead);  // the palette took focus
