@@ -33,7 +33,7 @@ export default function createTabSwitcher(front, showElement) {
 
     const mode = new Mode("Switcher");
     let tabs = [], cards = [], selected = 0;
-    let session = null, pendingCommit = false, lastPointer = null;
+    let session = null, pendingCommit = false, pendingSteps = 0, lastPointer = null;
 
     function select(i) {
         if (!cards.length) {
@@ -48,6 +48,15 @@ export default function createTabSwitcher(front, showElement) {
         requestAnimationFrame(() => requestAnimationFrame(() => {
             cards[selected] && cards[selected].scrollIntoView({block: 'nearest', inline: 'nearest'});
         }));
+    }
+
+    // Presses that arrive before the tab list count too, or the selection lands short.
+    function move(step) {
+        if (cards.length) {
+            select(selected + step);
+        } else {
+            pendingSteps += step;
+        }
     }
 
     function commit() {
@@ -94,8 +103,8 @@ export default function createTabSwitcher(front, showElement) {
         tabs = list;
         cards = tabs.map(card);
         track.replaceChildren(...cards);
-        ui.classList.toggle('few', cards.length <= 3);
-        select(tabs.length < 2 ? 0 : (backward ? tabs.length - 1 : 1));
+        select(tabs.length < 2 ? 0 : (backward ? tabs.length - 1 : 1) + pendingSteps);
+        pendingSteps = 0;
         if (pendingCommit) {
             commit();
             return;
@@ -123,14 +132,14 @@ export default function createTabSwitcher(front, showElement) {
         // Esc arrives as <Alt-Esc> while Alt is still held, and must cancel all the same
         if (event.key === 'Escape' || Mode.isSpecialKeyOf("<Esc>", event.sk_keyName)) {
             front.hidePopup();
-        } else if (event.altKey && event.code === 'KeyQ') {
-            select(selected + (event.shiftKey ? -1 : 1));
+        } else if (event.altKey && event.keyCode === 81) {  // the letter Q on any layout, like the mapping
+            move(event.shiftKey ? -1 : 1);
         } else if (event.key === 'Tab') {
-            select(selected + (event.shiftKey ? -1 : 1));
+            move(event.shiftKey ? -1 : 1);
         } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-            select(selected + 1);
+            move(1);
         } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-            select(selected - 1);
+            move(-1);
         } else if (event.key === 'Enter') {
             commit();
         } else {
@@ -164,6 +173,7 @@ export default function createTabSwitcher(front, showElement) {
         cards = [];
         session = null;
         pendingCommit = false;
+        pendingSteps = 0;
         lastPointer = null;
         track.replaceChildren();
     };
@@ -171,7 +181,7 @@ export default function createTabSwitcher(front, showElement) {
     front._actions['openSwitcher'] = function(message) {
         if (ui.style.display !== 'none') {
             // pressed again while open: move instead of re-rendering
-            select(selected + (message.backward ? -1 : 1));
+            move(message.backward ? -1 : 1);
             return;
         }
         session = message.session;
@@ -185,7 +195,8 @@ export default function createTabSwitcher(front, showElement) {
         });
     };
     // Alt released while focus was still in the page (see content_scripts/tabSwitcher.js).
-    // The page can post this too, so it only ever confirms the switcher it opened.
+    // The session only drops a relay left over from an earlier switcher; it is no
+    // guard against the page, which can post to the frontend like any content script.
     front._actions['switcherModifierUp'] = function(message) {
         if (session && message.session === session && ui.style.display !== 'none') {
             commit();

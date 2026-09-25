@@ -45,7 +45,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         omnibarPosition: 'middle',
     };
     const ui = document.getElementById('sk_omnibar');
-    let tabs = null, footer = null, count = null, seq = 0, lastPointer = null;
+    let tabs = null, footer = null, count = null, seq = 0, lastPointer = null, pendingEnter = null;
 
     function buildFooter() {
         const f = el('div', 'sk_palette_footer', '');
@@ -88,15 +88,18 @@ export default function createPalette(omnibar, front, searchEngine) {
         return scored.map((s) => s.t);
     }
 
-    function buildItems(query) {
+    const MAX_ROWS = 50;  // the rest is one more keystroke away
+    function buildItems(query, matched) {
         const bang = query.match(/^!(\S+)\s+(.+)$/);
         if (bang && searchEngine.aliases.hasOwnProperty(bang[1])) {
             return [{kind: 'search', alias: bang[1], query: bang[2]}];
         }
-        const items = matchTabs(query).map((tab) => ({kind: 'tab', tab}));
+        const items = matched.slice(0, MAX_ROWS).map((tab) => ({kind: 'tab', tab}));
         if (query.length) {
+            // "github.com" usually means the open GitHub tab: offer to open the
+            // address only after the tabs it matches
             if (omnibar.isUrl(query)) {
-                items.unshift({kind: 'url', url: /^[a-z][\w+.-]*:/i.test(query) ? query : 'https://' + query});
+                items.push({kind: 'url', url: /^[a-z][\w+.-]*:/i.test(query) ? query : 'https://' + query});
             }
             items.push({kind: 'search', alias: runtime.conf.defaultSearchEngine, query});
         }
@@ -134,19 +137,19 @@ export default function createPalette(omnibar, front, searchEngine) {
         row.append(createElementWithContent('span', omnibar.highlight(rxp, htmlEncode(title)), {class: 'sk_palette_title'}));
         host && row.append(el('span', 'sk_palette_host', host));
         li.append(row);
-        if (item.kind === 'tab' && item.tab.current) {
-            li.append(el('span', 'sk_palette_badge', 'Current'));
+        if (item.kind === 'tab' && (item.tab.current || item.tab.otherWindow)) {
+            li.append(el('span', 'sk_palette_badge', item.tab.current ? 'Current' : 'Other window'));
         }
         return li;
     }
 
-    function activate(item) {
+    function activate(item, tab) {
         if (item.kind === 'tab') {
             if (!item.tab.current) {
                 RUNTIME('focusTab', {windowId: item.tab.windowId, tabId: item.tab.id});
             }
         } else {
-            RUNTIME('openLink', {tab: {tabbed: true, active: true}, url: urlOf(item)});
+            RUNTIME('openLink', {tab: tab || {tabbed: true, active: true}, url: urlOf(item)});
         }
     }
 
@@ -169,7 +172,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         seq++;
         ui.classList.remove('sk_palette');
         footer && footer.remove();
-        footer = count = tabs = lastPointer = null;
+        footer = count = tabs = lastPointer = pendingEnter = null;
     };
 
     self.onInput = function() {
@@ -179,7 +182,8 @@ export default function createPalette(omnibar, front, searchEngine) {
         const query = omnibar.input.value.trim();
         const terms = query.split(/\s+/).filter((t) => t.length).map(escapeRegExp);
         const rxp = terms.length ? new RegExp(terms.join('|'), 'gi') : null;
-        const items = buildItems(query);
+        const matched = matchTabs(query);
+        const items = buildItems(query, matched);
         omnibar.listResults(items, (item) => render(item, rxp));
         const lis = Array.from(omnibar.resultsDiv.querySelectorAll('li'));
         lis.forEach((li) => {
@@ -201,15 +205,19 @@ export default function createPalette(omnibar, front, searchEngine) {
             lis[0].classList.remove('focused');
             omnibar.focusItem(lis[1]);
         }
-        const matched = items.filter((i) => i.kind === 'tab').length;
-        count.textContent = query ? `${matched} of ${tabs.length} tabs` : `${tabs.length} tabs`;
+        count.textContent = query ? `${matched.length} of ${tabs.length} tabs` : `${tabs.length} tabs`;
+        if (pendingEnter) {  // Enter was pressed before the tab list arrived
+            const keys = pendingEnter;
+            pendingEnter = null;
+            self.onEnter.call(keys) && front.hidePopup();
+        }
     };
 
     // Space would expand a leading search alias ("g ", "gh ") into a search
     // engine; here a query like "gh issues" should keep filtering tabs.
     // The palette shortcut pressed again closes it.
     self.onKeydown = function(evt) {
-        if ((evt.metaKey || evt.ctrlKey) && evt.shiftKey && evt.code === 'KeyP') {
+        if ((evt.metaKey || evt.ctrlKey) && evt.shiftKey && evt.keyCode === 80) {  // the letter P on any layout
             evt.preventDefault();
             front.hidePopup();
             return true;
@@ -226,14 +234,32 @@ export default function createPalette(omnibar, front, searchEngine) {
         }
     };
 
+    // Like every omnibar: Ctrl-Enter opens in the background and keeps the
+    // palette open, Shift-Enter flips new tab / current tab.
     self.onEnter = function() {
+        if (!tabs) {
+            pendingEnter = {tabbed: this.tabbed, activeTab: this.activeTab};
+            return false;
+        }
+        const how = {tabbed: !!this.tabbed, active: this.activeTab !== false};
         const fi = omnibar.resultsDiv.querySelector('li.focused');
         if (fi && fi.item) {
-            activate(fi.item);
+            activate(fi.item, how);
+            if (fi.item.kind === 'tab') {
+                return true;  // the user is leaving this tab: nothing to keep open
+            }
         } else if (omnibar.input.value.trim()) {
-            activate({kind: 'search', alias: runtime.conf.defaultSearchEngine, query: omnibar.input.value.trim()});
+            activate({kind: 'search', alias: runtime.conf.defaultSearchEngine, query: omnibar.input.value.trim()}, how);
         }
-        return true;
+        return how.active;
+    };
+
+    // Keys typed in the page before this input took focus (content_scripts/tabSwitcher.js).
+    front._actions['paletteTypeAhead'] = function(message) {
+        if (ui.style.display !== 'none' && ui.classList.contains('sk_palette') && typeof message.text === 'string') {
+            omnibar.input.value += message.text;
+            omnibar.triggerInput();
+        }
     };
 
     return self;

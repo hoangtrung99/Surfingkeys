@@ -882,7 +882,7 @@ function OpenBookmarks(omnibar) {
                 folderId: currentFolderId,
                 focused: items.indexOf(fi)
             });
-            self.prompt = fi.folder_name + separator;
+            self.prompt = fi.folder_name + separatorHtml;
             setSanitizedContent(omnibar.promptSpan, self.prompt);
             omnibar.input.value = "";
             currentFolderId = folderId;
@@ -929,7 +929,7 @@ function OpenBookmarks(omnibar) {
         var eaten = false;
         if (event.keyCode === KeyboardUtils.keyCodes.comma) {
             folderOnly = !folderOnly;
-            self.prompt = folderOnly ? `bookmark folder${separator}` : `bookmark${separator}`;
+            self.prompt = folderOnly ? `bookmark folder${separatorHtml}` : `bookmark${separatorHtml}`;
             setSanitizedContent(omnibar.promptSpan, self.prompt);
             RUNTIME('getBookmarks', {
                 parentId: currentFolderId,

@@ -15,6 +15,8 @@ const MRU_KEY = 'tabSwitcherMRU';
 const THUMB_PREFIX = 'tabThumb:';
 const CAPTURE_DELAY_MS = 300;  // a freshly activated tab has not painted yet
 const CAPTURE_GAP_MS = 1000;   // captureVisibleTab allows 2 calls/s, shared with Surfingkeys' own screenshots
+const USER_CAPTURE_QUIET_MS = 2000;
+const FRESH_MS = 30000;        // a thumbnail this young of the same page is not taken again
 const THUMB_WIDTH = 440;       // 2x the card width in the switcher
 const MAX_THUMBS = 80;
 const FOCUS_SETTLE_MS = 150;
@@ -22,6 +24,7 @@ const FOCUS_SETTLE_MS = 150;
 export default function installTabSwitcher(self, _response) {
     const session = chrome.storage && chrome.storage.session;
     const memThumbs = new Map();  // used only when storage.session is missing
+    const shotInfo = new Map();   // tabId -> {url, at} of the stored thumbnail
     let mru = [];
     let restored = !session;
     const waiting = [];
@@ -30,9 +33,11 @@ export default function installTabSwitcher(self, _response) {
     }
     if (session) {
         session.get(MRU_KEY, (r) => {
-            // merge, don't overwrite: activations may have landed before this read
+            // merge, don't overwrite: activations may have landed before this read,
+            // and their write stored only the part of the list known at the time
             const stored = (r && r[MRU_KEY]) || [];
             mru = mru.concat(stored.filter((id) => mru.indexOf(id) === -1));
+            session.set({[MRU_KEY]: mru});
             restored = true;
             waiting.splice(0).forEach((cb) => cb());
         });
@@ -43,12 +48,39 @@ export default function installTabSwitcher(self, _response) {
         session && session.set({[MRU_KEY]: mru});
     }
 
+    let focusedWindowId = chrome.windows.WINDOW_ID_NONE;
+    chrome.windows.getLastFocused((w) => {
+        if (!chrome.runtime.lastError && w && focusedWindowId === chrome.windows.WINDOW_ID_NONE) {
+            focusedWindowId = w.id;
+        }
+    });
+
+    // A browser page (new tab, chrome://, the Web Store) has no content script to
+    // show the switcher, so Alt+Q there just goes back to the previous tab.
+    function switchToPrevious(fromTab) {
+        whenRestored(() => {
+            const id = mru.find((i) => i !== fromTab.id);
+            id !== undefined && chrome.tabs.get(id, (t) => {
+                if (chrome.runtime.lastError || !t) {
+                    return;
+                }
+                chrome.tabs.update(t.id, {active: true});
+                t.windowId !== fromTab.windowId && chrome.windows.update(t.windowId, {focused: true});
+            });
+        });
+    }
+
     chrome.commands.onCommand.addListener((command, tab) => {
         if (!COMMANDS.hasOwnProperty(command)) {
             return;  // start.js owns the rest
         }
-        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]},
-            {frameId: 0}, () => void chrome.runtime.lastError);  // no content script (chrome:// etc): nothing to open
+        // Every frame gets it; the one holding keyboard focus opens the UI
+        // (content_scripts/tabSwitcher.js), so Alt is tracked where it is released.
+        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]}, () => {
+            if (chrome.runtime.lastError && command === 'tabSwitcher') {
+                switchToPrevious(t);
+            }
+        });
         if (tab && tab.id >= 0) {
             send(tab);
         } else {
@@ -56,8 +88,25 @@ export default function installTabSwitcher(self, _response) {
         }
     });
 
+    // Tell the user once, at install, when another extension (jump, for example)
+    // already holds a shortcut: Chrome then leaves ours unassigned, silently.
+    chrome.runtime.onInstalled.addListener((details) => {
+        if (details.reason !== 'install') {
+            return;
+        }
+        chrome.commands.getAll((cmds) => {
+            if ((cmds || []).some((c) => COMMANDS.hasOwnProperty(c.name) && !c.shortcut)) {
+                chrome.tabs.create({url: 'chrome://extensions/shortcuts'});
+            }
+        });
+    });
+
     chrome.tabs.onActivated.addListener(({tabId, windowId}) => {
-        touch(tabId);
+        // A tab activated in a window the user is not in (a script, a tab moved
+        // there) is not one they used. Unknown focus counts as the user's window.
+        if (focusedWindowId === chrome.windows.WINDOW_ID_NONE || windowId === focusedWindowId) {
+            touch(tabId);
+        }
         scheduleCapture(tabId, windowId);
     });
     // Switching to a tab in another window focuses the window first and activates
@@ -69,6 +118,7 @@ export default function installTabSwitcher(self, _response) {
         if (windowId < 0) {
             return;  // WINDOW_ID_NONE: the browser lost focus
         }
+        focusedWindowId = windowId;
         focusTimer = setTimeout(() => chrome.tabs.query({active: true, windowId}, (tabs) => {
             if (tabs && tabs[0] && tabs[0].id !== mru[0]) {
                 touch(tabs[0].id);
@@ -84,6 +134,7 @@ export default function installTabSwitcher(self, _response) {
     chrome.tabs.onRemoved.addListener((tabId) => {
         mru = mru.filter((id) => id !== tabId);
         memThumbs.delete(tabId);
+        shotInfo.delete(tabId);
         if (session) {
             session.set({[MRU_KEY]: mru});
             session.remove(THUMB_PREFIX + tabId);
@@ -91,19 +142,23 @@ export default function installTabSwitcher(self, _response) {
     });
 
     // --- thumbnails ---------------------------------------------------------
-    let captureTimer = null, lastCaptureAt = 0, capturing = false;
+    let captureTimer = null, lastCaptureAt = 0, capturing = false, quietUntil = 0;
     function scheduleCapture(tabId, windowId, delay) {
         clearTimeout(captureTimer);
-        const gap = lastCaptureAt + CAPTURE_GAP_MS - Date.now();
-        captureTimer = setTimeout(() => capture(tabId, windowId), Math.max(delay || CAPTURE_DELAY_MS, gap));
+        const wait = Math.max(lastCaptureAt + CAPTURE_GAP_MS, quietUntil) - Date.now();
+        captureTimer = setTimeout(() => capture(tabId, windowId), Math.max(delay || CAPTURE_DELAY_MS, wait));
     }
     function capture(tabId, windowId) {
-        if (capturing) {
+        if (capturing || Date.now() < quietUntil) {
             scheduleCapture(tabId, windowId, CAPTURE_GAP_MS);
             return;
         }
         chrome.tabs.get(tabId, (tab) => {
             if (chrome.runtime.lastError || !tab || !tab.active || tab.incognito || !/^(https?|file):/.test(tab.url || '')) {
+                return;
+            }
+            const known = shotInfo.get(tabId);
+            if (known && known.url === tab.url && Date.now() - known.at < FRESH_MS) {
                 return;
             }
             // A Surfingkeys panel on screen would end up in the thumbnail.
@@ -118,7 +173,14 @@ export default function installTabSwitcher(self, _response) {
                     if (chrome.runtime.lastError || !dataUrl) {
                         return;
                     }
-                    shrink(dataUrl).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
+                    // captureVisibleTab shoots whatever is active now; the user may have
+                    // switched while the page answered, and those pixels are not this tab's
+                    chrome.tabs.get(tabId, (now) => {
+                        if (chrome.runtime.lastError || !now || !now.active || now.url !== tab.url) {
+                            return;
+                        }
+                        shrink(dataUrl).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
+                    });
                 });
             });
         });
@@ -141,19 +203,39 @@ export default function installTabSwitcher(self, _response) {
         }));
     }
     function store(tabId, entry) {
+        if (mru.indexOf(tabId) === -1) {
+            return;  // closed while its thumbnail was being made
+        }
+        shotInfo.set(tabId, {url: entry.url, at: entry.at});
         if (!session) {
             memThumbs.set(tabId, entry);
             return;
         }
-        session.set({[THUMB_PREFIX + tabId]: entry}, () => {
-            void chrome.runtime.lastError;  // quota: the in-memory list still works
-            session.get(null, (all) => {
-                const keep = new Set(mru.slice(0, MAX_THUMBS).map((id) => THUMB_PREFIX + id));
-                const stale = Object.keys(all || {}).filter((k) => k.startsWith(THUMB_PREFIX) && !keep.has(k));
-                stale.length && session.remove(stale);
-            });
+        session.set({[THUMB_PREFIX + tabId]: entry}, () => void chrome.runtime.lastError);  // quota: the switcher falls back to icons
+        whenRestored(() => {
+            const old = mru.slice(MAX_THUMBS);
+            old.length && session.remove(old.map((id) => THUMB_PREFIX + id));
         });
     }
+
+    // Surfingkeys' own screenshots (yg, yG) spend the same 2-per-second
+    // captureVisibleTab budget and stall if a call fails, so thumbnails step aside.
+    ['captureVisibleTab', 'getCaptureSize'].forEach((name) => {
+        const upstream = self[name];
+        if (typeof upstream !== 'function') {
+            return;
+        }
+        self[name] = function(message, sender, sendResponse) {
+            clearTimeout(captureTimer);
+            quietUntil = Date.now() + USER_CAPTURE_QUIET_MS;
+            const wait = lastCaptureAt + CAPTURE_GAP_MS - Date.now();
+            if (wait > 0) {
+                setTimeout(() => upstream(message, sender, sendResponse), wait);
+                return;
+            }
+            return upstream(message, sender, sendResponse);
+        };
+    });
 
     // --- handlers reached via RUNTIME(action, args, cb) ---------------------
     // Every open tab, most recently used first; the tab asking is flagged current.
@@ -172,6 +254,7 @@ export default function installTabSwitcher(self, _response) {
                 return i === -1 ? Infinity : i;
             };
             tabs.sort((a, b) => (rank(a) - rank(b)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+            const currentWindow = sender.tab ? sender.tab.windowId : -1;
             _response(message, sendResponse, {
                 tabs: tabs.map((t) => ({
                     id: t.id,
@@ -182,6 +265,7 @@ export default function installTabSwitcher(self, _response) {
                     pinned: t.pinned,
                     audible: t.audible,
                     current: t.id === currentId,
+                    otherWindow: currentWindow !== -1 && t.windowId !== currentWindow,
                 })),
             });
         }));
