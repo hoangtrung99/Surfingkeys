@@ -255,9 +255,13 @@ export default function createPalette(omnibar, front, searchEngine) {
     };
 
     // Keys typed in the page before this input took focus (content_scripts/tabSwitcher.js).
+    // They were all typed before anything that reached the input, but can arrive
+    // after it, so they go in front.
     front._actions['paletteTypeAhead'] = function(message) {
         if (ui.style.display !== 'none' && ui.classList.contains('sk_palette') && typeof message.text === 'string') {
-            omnibar.input.value += message.text;
+            const input = omnibar.input;
+            input.value = message.text + input.value;
+            input.setSelectionRange(input.value.length, input.value.length);
             omnibar.triggerInput();
         }
     };
