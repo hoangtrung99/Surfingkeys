@@ -50,20 +50,9 @@ export default function createPalette(omnibar, front, searchEngine) {
         omnibarPosition: 'middle',
     };
     const ui = document.getElementById('sk_omnibar');
-    let tabs = null, footer = null, count = null, seq = 0, lastPointer = null, pendingEnter = null;
-
-    function buildFooter() {
-        const f = el('div', 'sk_palette_footer', '');
-        count = el('span', 'sk_palette_count', '');
-        const hint = (keys, label) => {
-            const span = el('span', 'sk_palette_key', '');
-            keys.forEach((k) => span.append(el('kbd', '', k)));
-            span.append(label);
-            return span;
-        };
-        f.append(count, hint(['↑', '↓'], 'navigate'), hint(['↵'], 'select'), hint(['esc'], 'close'));
-        return f;
-    }
+    // the count goes where every omnibar type shows one; listResults never writes it
+    const count = ui.querySelector('#sk_omnibarSearchArea .resultPage');
+    let tabs = null, seq = 0, lastPointer = null, pendingEnter = null;
 
     function matchTabs(query) {
         const terms = fold(query).split(/\s+/).filter((t) => t.length);
@@ -159,11 +148,8 @@ export default function createPalette(omnibar, front, searchEngine) {
     }
 
     self.onOpen = function() {
-        self.onClose();  // defensive: never two footers
         ui.classList.add('sk_palette');
         omnibar.input.placeholder = 'Search tabs, type a URL, or !g to search';
-        footer = buildFooter();
-        ui.append(footer);
         const mine = ++seq;
         RUNTIME('tabSwitcherTabs', {}, (resp) => {
             if (mine === seq) {  // not closed or reopened meanwhile
@@ -176,8 +162,8 @@ export default function createPalette(omnibar, front, searchEngine) {
     self.onClose = function() {
         seq++;
         ui.classList.remove('sk_palette');
-        footer && footer.remove();
-        footer = count = tabs = lastPointer = pendingEnter = null;
+        count.textContent = '';
+        tabs = lastPointer = pendingEnter = null;
     };
 
     self.onInput = function() {
