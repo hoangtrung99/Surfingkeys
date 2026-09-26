@@ -26,6 +26,9 @@ export default function installTabSwitcher(self, _response) {
     const memThumbs = new Map();  // used only when storage.session is missing
     const shotInfo = new Map();   // tabId -> {url, at} of the stored thumbnail
     let mru = [];
+    // The tab whose switcher asked for the tab list last. The strip closes when its
+    // window loses focus, so only one can be open at a time.
+    let switcherTab = null;
     let restored = !session;
     const waiting = [];
     // closed while the stored list was still being read: it must not come back with it
@@ -140,6 +143,12 @@ export default function installTabSwitcher(self, _response) {
         }
     });
     chrome.tabs.onRemoved.addListener((tabId) => {
+        // the open switcher still shows a card for it, and switching there would do nothing
+        if (switcherTab !== null && switcherTab !== tabId) {
+            chrome.tabs.sendMessage(switcherTab, {subject: 'tabSwitcherTabRemoved', tabId}, () => void chrome.runtime.lastError);
+        } else if (switcherTab === tabId) {
+            switcherTab = null;
+        }
         restored || removedEarly.add(tabId);
         mru = mru.filter((id) => id !== tabId);
         memThumbs.delete(tabId);
@@ -259,6 +268,9 @@ export default function installTabSwitcher(self, _response) {
             // The tab asking is the one in use, whatever focus events were missed.
             if (currentId !== -1 && mru[0] !== currentId) {
                 touch(currentId);
+            }
+            if (message.switcher && currentId !== -1) {
+                switcherTab = currentId;
             }
             const rank = (t) => {
                 if (t.id === currentId) {

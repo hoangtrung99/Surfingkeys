@@ -1062,13 +1062,19 @@ function start(browser) {
     self.closeTabByIds = function(message, sender, sendResponse) {
         chrome.tabs.remove(message.tabIds);
     };
+    // The tab or its window may have closed since the caller listed it: reading
+    // lastError keeps that failure off the extension's error page.
+    function ignoreGone() {
+        void chrome.runtime.lastError;
+    }
     function focusTab(windowId, tabId) {
         chrome.windows.update(windowId, {
             focused: true
         }, function() {
+            ignoreGone();
             chrome.tabs.update(tabId, {
                 active: true
-            });
+            }, ignoreGone);
         });
     }
     self.focusTab = function(message, sender, sendResponse) {
@@ -1077,7 +1083,7 @@ function start(browser) {
         } else {
             chrome.tabs.update(message.tabId, {
                 active: true
-            });
+            }, ignoreGone);
         }
     };
     self.focusTabByIndex = function(message, sender, sendResponse) {
