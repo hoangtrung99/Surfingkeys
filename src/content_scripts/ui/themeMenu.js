@@ -2,6 +2,7 @@
 // Palette: a row per built-in theme (common/themes.js) with a swatch of its
 // colours, the one in use marked. The page side (content_scripts/theme.js)
 // keeps the pick and sends the stylesheet this frame shows (applyBuiltinTheme).
+import { RUNTIME } from '../common/runtime.js';
 import { createElementWithContent, htmlEncode, setSanitizedContent } from '../common/utils.js';
 import { NO_THEME, PALETTES, THEME_IDS } from '../common/themes.js';
 
@@ -30,8 +31,10 @@ export default function createThemeMenu(omnibar, front) {
         setSanitizedContent(document.getElementById('sk_theme'), message.css);
     };
 
+    // through the background (front.js frontendRequest): a pick is stored, and
+    // postMessage, the frontend's usual way to the page, is open to the page too
     function pick(name) {
-        front.contentCommand({action: 'pickTheme', name});
+        RUNTIME('frontendRequest', {request: 'pickTheme', name});
     }
 
     function render(entry) {

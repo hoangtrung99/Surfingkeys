@@ -283,13 +283,17 @@ export default function installTabSwitcher(self, _response) {
             });
         }));
     };
-    // A subframe's report to its top frame, and the top frame's Alt release to
-    // the frontend: sent here, never over postMessage, which the page can use too.
+    // A subframe's report to its top frame, and the top frame's Alt release and
+    // typed-ahead keys to the frontend: sent here, never over postMessage, which the
+    // page can use too.
     self.tabSwitcherRelay = function(message, sender) {
         sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherRelay', data: message.data}, {frameId: 0}, () => void chrome.runtime.lastError);
     };
     self.tabSwitcherModifierUp = function(message, sender) {
         sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherModifierUp', session: message.session, at: message.at}, () => void chrome.runtime.lastError);
+    };
+    self.tabSwitcherPaletteTypeAhead = function(message, sender) {
+        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'paletteTypeAhead', text: message.text, then: message.then, shift: message.shift}, () => void chrome.runtime.lastError);
     };
     // Thumbnails are a separate request so the palette never pays for images
     // and the switcher can draw its cards before they arrive.

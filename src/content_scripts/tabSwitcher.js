@@ -70,7 +70,9 @@ function handleInTop(data) {
     } else if (data.altUp && session) {
         RUNTIME('tabSwitcherModifierUp', {session, at: data.at});
     } else if (typeof data.typeAhead === 'string') {
-        host.command({action: 'paletteTypeAhead', text: data.typeAhead, then: data.then, shift: data.shift});
+        // they can end in Enter, so chrome.runtime (see above), and only once the
+        // frontend is up: until then nothing would take them
+        host.afterCommands(() => RUNTIME('tabSwitcherPaletteTypeAhead', {text: data.typeAhead, then: data.then, shift: data.shift}));
     }
 }
 
@@ -185,8 +187,10 @@ export default function installTabSwitcher(api, front) {
         host = front;
     }
     holdMode = new Mode("PaletteTypeAhead");
+    // keys the page makes up are not held: handed over, an Enter among them would
+    // let the page pick a tab or open a URL through the palette
     holdMode.addEventListener('keydown', (e) => {
-        if (!e.metaKey && !e.ctrlKey) {
+        if (e.isTrusted && !e.metaKey && !e.ctrlKey) {
             holdKey(e);
             e.sk_stopPropagation = true;
         }

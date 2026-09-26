@@ -4,6 +4,9 @@
 // to the previous tab. Typing: matching tabs, then history and bookmark pages,
 // then "Open URL" when the input looks like one, then a web search, then the
 // search engine's suggestions. Tab on an empty input lists actions instead.
+//
+// Nothing here that acts is reachable over window.postMessage, which the page can
+// post to like any content script: typed-ahead keys come over chrome.runtime.
 import { RUNTIME, runtime } from '../common/runtime.js';
 import {
     attachFaviconToImgSrc,
@@ -18,6 +21,7 @@ const MAX_TABS = 5;
 const MAX_PAGES = 3;
 const MAX_SUGGESTIONS = 3;
 const HISTORY_SNAPSHOT = 1000;  // filtered locally on every keystroke, no round trip
+const EARLY_TYPE_AHEAD_MS = 1000;
 
 function hostOf(url) {
     try {
@@ -130,7 +134,7 @@ export default function createPalette(omnibar, front, searchEngine) {
     const ui = document.getElementById('sk_omnibar');
     const hint = ui.querySelector('#sk_omnibarSearchArea .resultPage');
     let tabs = null, current = null, pages = [], actionsMode = false;
-    let seq = 0, lastPointer = null, pendingEnter = null, pendingTab = false;
+    let seq = 0, lastPointer = null, pendingEnter = null, pendingTab = false, early = null;
     let suggestions = [], sugFor = '', sugSeq = 0, sugTimer = null;
 
     // Each acts on the tab that hosts the palette. RUNTIME copies RUNTIME.repeats
@@ -482,31 +486,47 @@ export default function createPalette(omnibar, front, searchEngine) {
         return how.active;
     };
 
+    const isOpen = () => ui.style.display !== 'none' && ui.classList.contains('sk_palette');
+
     // Keys typed in the page before this input took focus (content_scripts/tabSwitcher.js).
     // They were all typed before anything that reached the input, but can arrive
     // after it, so they go in front.
-    front._actions['paletteTypeAhead'] = function(message) {
-        if (ui.style.display !== 'none' && ui.classList.contains('sk_palette') && typeof message.text === 'string') {
-            const input = omnibar.input;
-            input.value = message.text + input.value;
-            input.setSelectionRange(input.value.length, input.value.length);
-            omnibar.triggerInput();
-            if (message.then === 'Enter') {
-                self.onEnter.call({tabbed: !!(omnibar.tabbed ^ !!message.shift), activeTab: true}) && front.hidePopup();
-            } else if (message.then === 'Escape') {
-                front.hidePopup();
-            } else if (message.then === 'Tab') {
-                tabs ? self.onTab() : (pendingTab = true);
-            }
+    function typeAhead(message) {
+        if (typeof message.text !== 'string') {
+            return;
         }
-    };
+        const input = omnibar.input;
+        input.value = message.text + input.value;
+        input.setSelectionRange(input.value.length, input.value.length);
+        omnibar.triggerInput();
+        if (message.then === 'Enter') {
+            self.onEnter.call({tabbed: !!(omnibar.tabbed ^ !!message.shift), activeTab: true}) && front.hidePopup();
+        } else if (message.then === 'Escape') {
+            front.hidePopup();
+        } else if (message.then === 'Tab') {
+            tabs ? self.onTab() : (pendingTab = true);
+        }
+    }
+    // Over chrome.runtime from the top frame, never postMessage: an Enter here picks
+    // a tab or opens a URL, and the page could post one. It takes another road than
+    // the open before it and can land first; it then waits for that open, briefly.
+    runtime.on('paletteTypeAhead', function(message) {
+        if (isOpen()) {
+            typeAhead(message);
+        } else {
+            early = {message, at: Date.now()};
+        }
+    });
 
     // Sent by the browser shortcut and the page mappings (content_scripts/tabSwitcher.js).
     front._actions['togglePalette'] = function() {
-        if (ui.style.display !== 'none' && ui.classList.contains('sk_palette')) {
+        if (isOpen()) {
             front.hidePopup();
         } else {
             front._actions['openOmnibar']({type: 'Palette'});
+            const keys = early && Date.now() - early.at < EARLY_TYPE_AHEAD_MS && early.message;
+            early = null;
+            keys && isOpen() && typeAhead(keys);
         }
     };
 
