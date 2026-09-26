@@ -17,9 +17,10 @@
 // Rows "Find a setting" filters carry the class sk-row. A row matches by its text
 // plus data-keywords, or by data-filter alone when it has one (a row whose text
 // is mostly a preview). shell.js documents ctx.
+import appearance from './appearance.js';
 import keys from './keys.js';
 import sites from './sites.js';
 import advanced from './advanced.js';
 import backup from './backup.js';
 
-export default [keys, sites, advanced, backup];
+export default [appearance, keys, sites, advanced, backup];
