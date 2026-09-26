@@ -290,12 +290,22 @@ function createOmnibar(front, clipboard) {
         return eaten;
     };
 
+    function scrollToFocused() {
+        self.focusItem(self.resultsDiv.querySelector('li.focused'));
+    }
     self.focusItem = function(fi) {
         if (typeof(fi) === 'string') {
             fi = self.resultsDiv.querySelector(fi);
         }
         if (fi) {
             fi.classList.add('focused');
+            // this frame stays 0px tall until the page resizes it, and keys typed right after
+            // opening can land first: the list has no height then, so scrolling to the row would
+            // push it out of view for good. Scroll once the frame has its height.
+            if (window.innerHeight === 0) {
+                window.addEventListener('resize', scrollToFocused, {once: true});
+                return;
+            }
             const fiRect = fi.getBoundingClientRect();
             const resultsRect = self.resultsDiv.getBoundingClientRect();
             if (fiRect.top < resultsRect.top || fiRect.bottom > resultsRect.bottom) {
