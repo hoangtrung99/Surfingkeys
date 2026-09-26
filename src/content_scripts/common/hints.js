@@ -1055,6 +1055,9 @@ div.hint-scrollable {
     };
 
     var _styleForText = "", _styleForClick = "";
+    // Which sub modes the user's settings styled: the built-in theme
+    // (content_scripts/theme.js) no longer restyles those.
+    var _userStyled = {};
     /**
      * Set styles for hints.
      *
@@ -1066,7 +1069,12 @@ div.hint-scrollable {
      * Hints.style('border: solid 3px #552a48; color:#efe1eb; background: none; background-color: #552a48;');
      * Hints.style("div{border: solid 3px #707070; color:#efe1eb; background: none; background-color: #707070;} div.begin{color:red;}", "text");
      */
-    self.style = function(css, mode) {
+    self.style = function(css, mode, fromTheme) {
+        const sub = mode === "text" ? "text" : "click";
+        if (fromTheme && _userStyled[sub]) {
+            return;
+        }
+        _userStyled[sub] = _userStyled[sub] || !fromTheme;
         if (!/^div\b/.test(css)) {
             css = `div{${css}}`;
         }

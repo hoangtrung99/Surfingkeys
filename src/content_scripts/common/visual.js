@@ -806,7 +806,7 @@ function createVisual(clipboard, hints) {
         return sentence;
     };
 
-    var _style = {};
+    var _style = {}, _userStyled = {};
     /**
      * Set styles for visual mode.
      *
@@ -818,7 +818,12 @@ function createVisual(clipboard, hints) {
      * Visual.style('marks', 'background-color: #89a1e2;');
      * Visual.style('cursor', 'background-color: #9065b7;');
      */
-    self.style = function (element, style) {
+    self.style = function (element, style, fromTheme) {
+        // what the user's settings styled, the built-in theme (content_scripts/theme.js) leaves alone
+        if (fromTheme && _userStyled[element]) {
+            return;
+        }
+        _userStyled[element] = _userStyled[element] || !fromTheme;
         _style[element] = style;
 
         cursor.setAttribute('style', _style.cursor || '');

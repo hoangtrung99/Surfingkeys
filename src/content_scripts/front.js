@@ -25,7 +25,13 @@ function createFront(insert, normal, hints, visual, browser) {
     // as there is no need to make this object live in frontend.html.
 
     var _uiUserSettings = [];
+    // The built-in theme's stylesheet (theme.js): only the latest one is kept, and
+    // it goes first, so settings.theme from the user's settings always lands on top.
+    var _builtinTheme = null, _userTheme = false;
     function applyUserSettings() {
+        if (_builtinTheme && !_userTheme) {
+            self.command(Object.assign({}, _builtinTheme));
+        }
         for (var cmd of _uiUserSettings) {
             self.command(cmd);
         }
@@ -76,6 +82,19 @@ function createFront(insert, normal, hints, visual, browser) {
             });
         }
     }
+
+    self.setBuiltinTheme = function(id, css) {
+        // `theme`, not `id`: command() sets `id` to route the message
+        _builtinTheme = {action: 'applyBuiltinTheme', theme: id, css};
+        // sent straight away, not in a later callback: a banner that follows it
+        // must find the new stylesheet already there
+        if (frontendPromise && !_userTheme) {
+            self.command(Object.assign({}, _builtinTheme));
+        }
+    };
+    self.hasUserTheme = function() {
+        return _userTheme;
+    };
 
     var _listSuggestions = {};
     self.addSearchAlias = function (alias, prompt, url, suggestionURL, listSuggestion, options) {
@@ -503,6 +522,9 @@ function createFront(insert, normal, hints, visual, browser) {
             onDialogResponseOk = onOk;
         },
         applySettingsFromSnippets: (us) => {
+            if ('theme' in us) {
+                _userTheme = true;
+            }
             applyUICommand({
                 action: 'applyUserSettings',
                 userSettings: us
@@ -779,6 +801,11 @@ function createFront(insert, normal, hints, visual, browser) {
 
     _actions["executeUserCommand"] = function(message) {
         dispatchSKEvent('user', ['executeUserCommand', message.name, message.args]);
+    };
+
+    // from the theme menu and :theme (ui/themeMenu.js); theme.js sets pickTheme
+    _actions["pickTheme"] = function(message) {
+        self.pickTheme && self.pickTheme(message.name);
     };
 
     var _active = window === top;

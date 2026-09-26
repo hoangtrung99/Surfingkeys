@@ -1,0 +1,88 @@
+// The theme menu, opened by ;T, :theme and "Change Theme…" in the Command
+// Palette: a row per built-in theme (common/themes.js) with a swatch of its
+// colours, the one in use marked. The page side (content_scripts/theme.js)
+// keeps the pick and sends the stylesheet this frame shows (applyBuiltinTheme).
+import { createElementWithContent, htmlEncode, setSanitizedContent } from '../common/utils.js';
+import { NO_THEME, PALETTES, THEME_IDS } from '../common/themes.js';
+
+const ENTRIES = THEME_IDS.map((id) => {
+    const P = PALETTES[id];
+    return {id, name: P.name, bg: P.surface || P.bg, dots: [P.text, P.accent, P.mauve], also: `${id} ${P.light ? 'light' : 'dark'}`};
+}).concat({
+    // frontend.css: white panel, black text, red matches
+    id: NO_THEME, name: 'Surfingkeys', bg: '#ffffff', dots: ['#000000', '#b90c0c', '#4b3acc'], also: 'original none off light',
+});
+
+// "rose" finds "Rosé Pine"
+function fold(s) {
+    return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+export default function createThemeMenu(omnibar, front) {
+    const self = {
+        focusFirstCandidate: true,
+        prompt: '',
+    };
+    let current = null;
+
+    front._actions['applyBuiltinTheme'] = function(message) {
+        current = message.theme;
+        setSanitizedContent(document.getElementById('sk_theme'), message.css);
+    };
+
+    function pick(name) {
+        front.contentCommand({action: 'pickTheme', name});
+    }
+
+    function render(entry) {
+        const dots = entry.dots.map((c) => `<i style="background:${c}"></i>`).join('');
+        const li = createElementWithContent('li', `<div class="sk_theme_row">`
+            + `<span class="sk_theme_swatch" style="background:${entry.bg}">${dots}</span>`
+            + `<span class="sk_theme_name">${htmlEncode(entry.name)}</span>`
+            + (entry.id === current ? '<span class="sk_theme_current">In use</span>' : '')
+            + '</div>');
+        li.themeId = entry.id;
+        return li;
+    }
+
+    function update() {
+        const terms = fold(omnibar.input.value).split(/\s+/).filter((t) => t.length);
+        const entries = ENTRIES.filter((e) => terms.every((t) => fold(`${e.name} ${e.also}`).includes(t)));
+        omnibar.listResults(entries, render);
+        const lis = Array.from(omnibar.resultsDiv.querySelectorAll('li'));
+        lis.forEach((li) => {
+            li.onclick = () => {
+                pick(li.themeId);
+                front.hidePopup();
+            };
+        });
+        // nothing typed yet: start from the theme in use, so the arrows reach its neighbours
+        const inUse = !terms.length && lis.find((li) => li.themeId === current);
+        if (inUse) {
+            lis.forEach((li) => li.classList.remove('focused'));
+            omnibar.focusItem(inUse);
+        }
+    }
+
+    self.onOpen = function() {
+        omnibar.input.placeholder = 'Search themes…';
+        update();
+    };
+    self.onInput = update;
+    self.onEnter = function() {
+        const fi = omnibar.resultsDiv.querySelector('li.focused');
+        fi && pick(fi.themeId);
+        return true;
+    };
+
+    omnibar.command('theme', '#11Choose a theme, or :theme nord', function(args) {
+        const name = args.join(' ').trim();
+        if (name) {
+            pick(name);
+        } else {
+            front._actions['openOmnibar']({type: 'Themes'});
+        }
+    });
+
+    return self;
+}

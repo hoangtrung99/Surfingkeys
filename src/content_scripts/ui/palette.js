@@ -146,6 +146,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         {name: 'Zoom Out', keys: 'zo', run: () => once('setZoom', {zoomFactor: -0.1})},
         {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},
         {name: 'View Source', keys: 'gs', run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
+        {name: 'Change Theme…', keys: ';T', also: 'color colour scheme appearance dark light', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Themes'}), 100)},
     ].map((a) => prep(Object.assign({kind: 'action', key: a.name}, a), a.name + ' ' + (a.also || ''), ''));
 
     function urlOf(item) {

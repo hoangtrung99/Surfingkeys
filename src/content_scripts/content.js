@@ -22,6 +22,7 @@ import {
 import createFront from './front.js';
 import createAPI from './common/api.js';
 import createDefaultMappings from './common/default.js';
+import installTheme from './theme.js';
 
 import KeyboardUtils from './common/keyboardUtils';
 
@@ -152,6 +153,7 @@ function _initModules() {
 
     const api = createAPI(clipboard, insert, normal, hints, visual, front, _browser);
     createDefaultMappings(api, clipboard, insert, normal, hints, visual, front, _browser);
+    const theme = installTheme(api, front, hints, visual);
     _browser.installTabSwitcher && _browser.installTabSwitcher(api, front);
     if (typeof(_browser.plugin) === "function") {
         _browser.plugin({ front });
@@ -170,6 +172,7 @@ function _initModules() {
         normal,
         front,
         api,
+        theme,
     };
 }
 
@@ -179,6 +182,7 @@ function _initContent(modes) {
     runtime.on('settingsUpdated', response => {
         var rs = response.settings;
         applySettings(modes.api, modes.normal, rs);
+        modes.theme.onSettingsUpdated(rs);
     });
 
     if (runtime.conf.stealFocusOnLoad && !isInUIFrame()
