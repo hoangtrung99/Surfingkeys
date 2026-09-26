@@ -1,6 +1,11 @@
 // Visual Tab Switcher: a strip of tab previews, most recently used first.
 // Hold Alt and press Q to move, release Alt to switch; Shift+Alt+Q, Tab,
 // Shift+Tab and the arrow keys move too, Enter switches, Esc cancels.
+//
+// Releasing Alt switches only when it goes up after the strip is on screen. Alt
+// already up by then (a quick tap, or a press the page never saw) leaves the
+// strip open to pick from, so a tab never changes without the user having seen
+// where to.
 import { RUNTIME, runtime } from '../common/runtime.js';
 import { attachFaviconToImgSrc } from '../common/utils.js';
 import Mode from '../common/mode';
@@ -34,6 +39,7 @@ export default function createTabSwitcher(front, showElement) {
     const mode = new Mode("Switcher");
     let tabs = [], cards = [], selected = 0;
     let session = null, pendingCommit = false, pendingSteps = 0, lastPointer = null;
+    let drawnAt = Infinity;  // when the cards went up, as performance.timeOrigin-based ms
 
     function select(i) {
         if (!cards.length) {
@@ -59,9 +65,10 @@ export default function createTabSwitcher(front, showElement) {
         }
     }
 
+    // Enter and a click are choices made on purpose: they wait for the list.
     function commit() {
         if (!tabs.length) {
-            pendingCommit = true;  // Alt released before the list arrived: switch as soon as it does
+            pendingCommit = true;
             return;
         }
         const tab = tabs[selected];
@@ -69,6 +76,14 @@ export default function createTabSwitcher(front, showElement) {
         front.hidePopup();
         if (tab && !tab.current) {
             RUNTIME('focusTab', {windowId: tab.windowId, tabId: tab.id});
+        }
+    }
+
+    // Alt went up at `at`. Before the cards were drawn the user had nothing to
+    // choose from yet, so the strip stays open instead (see above).
+    function release(at) {
+        if (typeof at === 'number' && at >= drawnAt) {
+            commit();
         }
     }
 
@@ -104,6 +119,7 @@ export default function createTabSwitcher(front, showElement) {
         cards = tabs.map(card);
         track.replaceChildren(...cards);
         select(tabs.length < 2 ? 0 : (backward ? tabs.length - 1 : 1) + pendingSteps);
+        drawnAt = performance.timeOrigin + performance.now();
         pendingSteps = 0;
         if (pendingCommit) {
             commit();
@@ -130,7 +146,8 @@ export default function createTabSwitcher(front, showElement) {
         event.sk_suppressed = true;
         let handled = true;
         // Esc arrives as <Alt-Esc> while Alt is still held, and must cancel all the same
-        if (event.key === 'Escape' || Mode.isSpecialKeyOf("<Esc>", event.sk_keyName)) {
+        // a modifier on its own (Alt pressed again while the strip is open) has no sk_keyName
+        if (event.key === 'Escape' || (event.sk_keyName && Mode.isSpecialKeyOf("<Esc>", event.sk_keyName))) {
             front.hidePopup();
         } else if (event.altKey && event.keyCode === 81) {  // the letter Q on any layout, like the mapping
             move(event.shiftKey ? -1 : 1);
@@ -151,7 +168,7 @@ export default function createTabSwitcher(front, showElement) {
     }).addEventListener('keyup', function(event) {
         event.sk_suppressed = true;
         if (event.key === 'Alt') {  // keyup carries no sk_keyName
-            commit();
+            release(performance.timeOrigin + event.timeStamp);
         }
     }).addEventListener('mousedown', function(event) {
         if (!hud.contains(event.target)) {
@@ -175,6 +192,7 @@ export default function createTabSwitcher(front, showElement) {
         pendingCommit = false;
         pendingSteps = 0;
         lastPointer = null;
+        drawnAt = Infinity;
         track.replaceChildren();
     };
 
@@ -200,7 +218,7 @@ export default function createTabSwitcher(front, showElement) {
     // The session drops a relay left over from an earlier switcher.
     runtime.on('tabSwitcherModifierUp', function(message) {
         if (session && message.session === session && ui.style.display !== 'none') {
-            commit();
+            release(message.at);
         }
     });
 }

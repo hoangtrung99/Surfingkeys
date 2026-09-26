@@ -59,14 +59,16 @@ function handleInTop(data) {
     }
     if (data.open === 'openSwitcher') {
         session = generateQuickGuid();
+        // Never switched from here, even when Alt looks released already: this frame
+        // knows Alt is down only if it saw the key go down, which it misses whenever
+        // focus was elsewhere (address bar, a frame without this script, a page that
+        // just got focus). Guessing a quick tap from that switched tabs with no
+        // switcher shown; the UI decides instead (ui/tabSwitcher.js).
         host.command({action: 'openSwitcher', backward: !!data.backward, session});
-        if (!data.altHeld) {  // released before the UI could hear it: a quick tap
-            RUNTIME('tabSwitcherModifierUp', {session});
-        }
     } else if (data.open === 'openPalette') {
         host.command({action: 'togglePalette'});
     } else if (data.altUp && session) {
-        RUNTIME('tabSwitcherModifierUp', {session});
+        RUNTIME('tabSwitcherModifierUp', {session, at: data.at});
     } else if (typeof data.typeAhead === 'string') {
         host.command({action: 'paletteTypeAhead', text: data.typeAhead, then: data.then, shift: data.shift});
     }
@@ -95,6 +97,7 @@ function beginHold() {
 // Releasing Alt switches to the selected tab. Focus reaches the frontend frame a
 // few hops after the key-down; relay the keyup that lands here meanwhile. Once
 // focus has moved (this window blurs), the frontend hears the keyup itself.
+// `alt` only arms that relay: a release this frame never sees switches nothing.
 function start(action, alt, backward) {
     if (action === 'openSwitcher') {
         deliver({open: 'openSwitcher', altHeld: alt, backward});
@@ -138,7 +141,9 @@ window.addEventListener('keyup', (e) => {
     altHeld = e.key === 'Alt' ? false : e.altKey;
     if (e.key === 'Alt' && relayArmed) {
         relayArmed = false;
-        deliver({altUp: true});
+        // when the key went up, as a time every frame reads alike: the relay can land
+        // after the strip is drawn, from a release that came before it
+        deliver({altUp: true, at: performance.timeOrigin + e.timeStamp});
     }
 }, true);
 window.addEventListener('blur', () => {

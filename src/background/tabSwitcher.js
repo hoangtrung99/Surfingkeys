@@ -289,7 +289,7 @@ export default function installTabSwitcher(self, _response) {
         sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherRelay', data: message.data}, {frameId: 0}, () => void chrome.runtime.lastError);
     };
     self.tabSwitcherModifierUp = function(message, sender) {
-        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherModifierUp', session: message.session}, () => void chrome.runtime.lastError);
+        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherModifierUp', session: message.session, at: message.at}, () => void chrome.runtime.lastError);
     };
     // Thumbnails are a separate request so the palette never pays for images
     // and the switcher can draw its cards before they arrive.

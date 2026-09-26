@@ -18,7 +18,7 @@ One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</
 
 ### Visual tab switcher — <kbd>Alt</kbd>+<kbd>Q</kbd>
 
-Hold <kbd>Alt</kbd>, press <kbd>Q</kbd> to move through tabs in most-recently-used order (with <kbd>Shift</kbd> to go back), release <kbd>Alt</kbd> to switch. A quick tap jumps to the previous tab.
+Hold <kbd>Alt</kbd>, press <kbd>Q</kbd> to move through tabs in most-recently-used order (with <kbd>Shift</kbd> to go back), release <kbd>Alt</kbd> to switch. After a quick tap the switcher stays open: pick a tab with <kbd>Q</kbd>, <kbd>Tab</kbd> or the arrow keys, then press <kbd>Enter</kbd> or click it.
 
 ![Visual tab switcher](docs/images/tab-switcher.png)
 
