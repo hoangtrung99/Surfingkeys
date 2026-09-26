@@ -28,6 +28,8 @@ export default function installTabSwitcher(self, _response) {
     let mru = [];
     let restored = !session;
     const waiting = [];
+    // closed while the stored list was still being read: it must not come back with it
+    const removedEarly = new Set();
     function whenRestored(cb) {
         restored ? cb() : waiting.push(cb);
     }
@@ -36,7 +38,7 @@ export default function installTabSwitcher(self, _response) {
             // merge, don't overwrite: activations may have landed before this read,
             // and their write stored only the part of the list known at the time
             const stored = (r && r[MRU_KEY]) || [];
-            mru = mru.concat(stored.filter((id) => mru.indexOf(id) === -1));
+            mru = mru.concat(stored.filter((id) => mru.indexOf(id) === -1 && !removedEarly.has(id)));
             session.set({[MRU_KEY]: mru});
             restored = true;
             waiting.splice(0).forEach((cb) => cb());
@@ -59,14 +61,18 @@ export default function installTabSwitcher(self, _response) {
     // show the switcher, so Alt+Q there just goes back to the previous tab.
     function switchToPrevious(fromTab) {
         whenRestored(() => {
-            const id = mru.find((i) => i !== fromTab.id);
-            id !== undefined && chrome.tabs.get(id, (t) => {
-                if (chrome.runtime.lastError || !t) {
-                    return;
-                }
-                chrome.tabs.update(t.id, {active: true});
-                t.windowId !== fromTab.windowId && chrome.windows.update(t.windowId, {focused: true});
-            });
+            // the first one still open: a tab id can outlive its tab here
+            const ids = mru.filter((i) => i !== fromTab.id);
+            (function next(i) {
+                i < ids.length && chrome.tabs.get(ids[i], (t) => {
+                    if (chrome.runtime.lastError || !t) {
+                        next(i + 1);
+                        return;
+                    }
+                    chrome.tabs.update(t.id, {active: true});
+                    t.windowId !== fromTab.windowId && chrome.windows.update(t.windowId, {focused: true});
+                });
+            })(0);
         });
     }
 
@@ -132,6 +138,7 @@ export default function installTabSwitcher(self, _response) {
         }
     });
     chrome.tabs.onRemoved.addListener((tabId) => {
+        restored || removedEarly.add(tabId);
         mru = mru.filter((id) => id !== tabId);
         memThumbs.delete(tabId);
         shotInfo.delete(tabId);
@@ -164,6 +171,11 @@ export default function installTabSwitcher(self, _response) {
             // A Surfingkeys panel on screen would end up in the thumbnail.
             chrome.tabs.sendMessage(tabId, {subject: 'tabSwitcherUiVisible'}, {frameId: 0}, (res) => {
                 if (chrome.runtime.lastError || (res && res.visible)) {
+                    return;
+                }
+                // a screenshot of Surfingkeys' own (yg) may have started during that round trip
+                if (capturing || Date.now() < quietUntil) {
+                    scheduleCapture(tabId, windowId, CAPTURE_GAP_MS);
                     return;
                 }
                 capturing = true;
@@ -270,6 +282,14 @@ export default function installTabSwitcher(self, _response) {
                 })),
             });
         }));
+    };
+    // A subframe's report to its top frame, and the top frame's Alt release to
+    // the frontend: sent here, never over postMessage, which the page can use too.
+    self.tabSwitcherRelay = function(message, sender) {
+        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherRelay', data: message.data}, {frameId: 0}, () => void chrome.runtime.lastError);
+    };
+    self.tabSwitcherModifierUp = function(message, sender) {
+        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherModifierUp', session: message.session}, () => void chrome.runtime.lastError);
     };
     // Thumbnails are a separate request so the palette never pays for images
     // and the switcher can draw its cards before they arrive.

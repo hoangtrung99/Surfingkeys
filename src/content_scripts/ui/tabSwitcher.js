@@ -1,7 +1,7 @@
 // Visual Tab Switcher: a strip of tab previews, most recently used first.
 // Hold Alt and press Q to move, release Alt to switch; Shift+Alt+Q, Tab,
 // Shift+Tab and the arrow keys move too, Enter switches, Esc cancels.
-import { RUNTIME } from '../common/runtime.js';
+import { RUNTIME, runtime } from '../common/runtime.js';
 import { attachFaviconToImgSrc } from '../common/utils.js';
 import Mode from '../common/mode';
 
@@ -195,11 +195,12 @@ export default function createTabSwitcher(front, showElement) {
         });
     };
     // Alt released while focus was still in the page (see content_scripts/tabSwitcher.js).
-    // The session only drops a relay left over from an earlier switcher; it is no
-    // guard against the page, which can post to the frontend like any content script.
-    front._actions['switcherModifierUp'] = function(message) {
+    // It comes from the background, never over postMessage: the page can post
+    // to this frame like any content script, and could then switch tabs by itself.
+    // The session drops a relay left over from an earlier switcher.
+    runtime.on('tabSwitcherModifierUp', function(message) {
         if (session && message.session === session && ui.style.display !== 'none') {
             commit();
         }
-    };
+    });
 }

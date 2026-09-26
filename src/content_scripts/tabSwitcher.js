@@ -9,16 +9,20 @@
 // keyboard focus (an editor, an embedded comment box) is where Alt is released
 // and where keys typed ahead land, even when Surfingkeys has not initialised it.
 // Such a frame reports to the top frame, which is the one that talks to the UI.
-import { runtime } from './common/runtime.js';
+//
+// Anything that can end in a tab switch travels over chrome.runtime, through the
+// background: the page can post to window.postMessage like any content script,
+// and a switch it could trigger there would move the user with no key pressed.
+import { RUNTIME, runtime } from './common/runtime.js';
 import { generateQuickGuid } from './common/utils.js';
 import Mode from './common/mode.js';
 
 const TYPE_AHEAD_MS = 500;
 const CLAIM_WAIT_MS = 100;
-const MSG = 'surfingkeys_tabswitcher';
 
 let altHeld = false;
 let holding = false, buffer = '', holdTimer = null;
+let heldKey = null;  // Enter, Esc or Tab typed ahead: the palette runs it after the text
 let relayArmed = false;
 let host = null;  // the top frame's Surfingkeys front, once installTabSwitcher ran there
 let holdMode = null;  // where Surfingkeys runs, its mode stack decides who sees a key first
@@ -45,7 +49,7 @@ function deliver(data) {
     if (window === top) {
         handleInTop(data);
     } else {
-        window.top.postMessage({[MSG]: data}, '*');
+        RUNTIME('tabSwitcherRelay', {data});
     }
 }
 
@@ -57,14 +61,14 @@ function handleInTop(data) {
         session = generateQuickGuid();
         host.command({action: 'openSwitcher', backward: !!data.backward, session});
         if (!data.altHeld) {  // released before the UI could hear it: a quick tap
-            host.command({action: 'switcherModifierUp', session});
+            RUNTIME('tabSwitcherModifierUp', {session});
         }
     } else if (data.open === 'openPalette') {
         host.command({action: 'togglePalette'});
     } else if (data.altUp && session) {
-        host.command({action: 'switcherModifierUp', session});
+        RUNTIME('tabSwitcherModifierUp', {session});
     } else if (typeof data.typeAhead === 'string') {
-        host.command({action: 'paletteTypeAhead', text: data.typeAhead});
+        host.command({action: 'paletteTypeAhead', text: data.typeAhead, then: data.then, shift: data.shift});
     }
 }
 
@@ -76,8 +80,9 @@ function endHold() {
     if (holding) {
         holding = false;
         holdMode && holdMode.exit(true);  // peek: leave whatever mode sits above untouched
-        buffer && deliver({typeAhead: buffer});
+        (buffer || heldKey) && deliver({typeAhead: buffer, then: heldKey && heldKey.key, shift: heldKey && heldKey.shift});
         buffer = '';
+        heldKey = null;
     }
 }
 function beginHold() {
@@ -106,10 +111,18 @@ function holdKey(e) {
         buffer += e.key;
     } else if (e.key === 'Backspace') {
         buffer = buffer.slice(0, -1);
+    } else if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab') {
+        // swallowed like the rest, so it is handed over too; nothing typed after it counts
+        heldKey = {key: e.key, shift: e.shiftKey};
+        setTimeout(endHold, 0);
     }
 }
 
+// keys the page makes up (dispatchEvent) are not the user's
 window.addEventListener('keydown', (e) => {
+    if (!e.isTrusted) {
+        return;
+    }
     altHeld = e.altKey;
     // a frame Surfingkeys has not set up: nothing else is listening for these keys
     if (holding && !holdMode && !e.metaKey && !e.ctrlKey) {
@@ -119,6 +132,9 @@ window.addEventListener('keydown', (e) => {
     }
 }, true);
 window.addEventListener('keyup', (e) => {
+    if (!e.isTrusted) {
+        return;
+    }
     altHeld = e.key === 'Alt' ? false : e.altKey;
     if (e.key === 'Alt' && relayArmed) {
         relayArmed = false;
@@ -132,14 +148,10 @@ window.addEventListener('blur', () => {
 });
 
 if (window === top) {
-    // The page can post this too, like anything on the ui host bridge; it can only
-    // open these panels or confirm the switcher, never reach another page.
-    window.addEventListener('message', (e) => {
-        const data = e.data && e.data[MSG];
-        if (data && e.source !== window) {
-            claimed = true;
-            handleInTop(data);
-        }
+    // from a subframe, through the background (see above)
+    runtime.on('tabSwitcherRelay', (msg) => {
+        claimed = true;
+        handleInTop(msg.data || {});
     });
     runtime.on('tabSwitcherUiVisible', (msg, sender, response) => {
         response({visible: isPanelOpen()});  // answered synchronously: runtime.js never keeps the channel open
