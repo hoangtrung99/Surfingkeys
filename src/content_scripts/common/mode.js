@@ -119,7 +119,25 @@ function onAfterHandler(mode, event) {
     }
 }
 
+// Reloading or updating the extension leaves this script running in pages that
+// were already open, cut off from the extension: chrome.runtime.id is gone and
+// every chrome.runtime call throws "Extension context invalidated". Such a copy
+// stops listening, so the page gets its keys back until it is reloaded.
+function isOrphaned() {
+    return !(globalThis.chrome && chrome.runtime && chrome.runtime.id);
+}
+function retire() {
+    mode_stack = [];
+    for (var evtName in _listenedEvents) {
+        window.removeEventListener(evtName, _listenedEvents[evtName], true);
+    }
+}
+
 function handleStack(eventName, event, cb) {
+    if (isOrphaned()) {
+        retire();
+        return;
+    }
     for (var i = 0; i < mode_stack.length && !event.sk_stopPropagation; i++) {
         var m = mode_stack[i];
         if (!event.sk_suppressed && m.eventListeners.hasOwnProperty(eventName)) {
@@ -140,6 +158,10 @@ var suppressScrollEvent = 0, _listenedEvents = {
         eventListenerBeats ++;
     },
     "keydown": function (event) {
+        if (isOrphaned()) {
+            retire();
+            return;
+        }
         event.sk_keyName = KeyboardUtils.getKeyChar(event);
         if (mode_stack.length === 0 && window !== top) {
             // automatically boots iframe on demand
@@ -222,6 +244,8 @@ Mode.getScrollableElements = function () {
     }
     return nodes;
 };
+
+Mode.isOrphaned = isOrphaned;
 
 Mode.init = (cb)=> {
     // For blank page in frames, we defer init to page loaded

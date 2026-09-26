@@ -130,7 +130,10 @@ const runtime = (function() {
             resolve(window.location.href);
         } else {
             RUNTIME("getTopURL", null, function(rs) {
-                resolve(rs.url);
+                // no answer while the background restarts (the extension was just
+                // reloaded under an open page): reading lastError keeps it off the
+                // console, and a frame's referrer is its parent's URL
+                resolve(chrome.runtime.lastError || !rs ? document.referrer : rs.url);
             });
         }
     });

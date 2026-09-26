@@ -797,7 +797,9 @@ const Front = (function() {
 
     window.addEventListener('message', function(event) {
         var _message = event.data && event.data.surfingkeys_frontend_data;
-        if (_message === undefined) {
+        // cut off from a reloaded extension (see Mode.isOrphaned): every handler here
+        // would throw "Extension context invalidated"
+        if (_message === undefined || Mode.isOrphaned()) {
             return;
         }
         if (_callbacks[_message.id]) {

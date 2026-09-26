@@ -839,7 +839,9 @@ function createFront(insert, normal, hints, visual, browser) {
 
     window.addEventListener('message', function (event) {
         var _message = event.data && (event.data.surfingkeys_content_data || event.data.dictorium_data);
-        if (_message === undefined) {
+        // cut off from a reloaded extension (see Mode.isOrphaned): every handler here
+        // would throw "Extension context invalidated"
+        if (_message === undefined || Mode.isOrphaned()) {
             return;
         }
         if (_message.action === "performInlineQuery") {
