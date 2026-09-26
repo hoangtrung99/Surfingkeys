@@ -391,12 +391,14 @@ ${SHOW_FOOTER ? `
 #sk_editor.normal-mode .ace_hidden-cursors .ace_cursor { background: transparent; border: 1px solid var(--accent); }
 #sk_editor .ace_dialog { background: var(--mantle); color: var(--text); border-top: 1px solid var(--rule); padding: 4px 10px; }
 #sk_editor .ace_dialog input { color: var(--text); font-family: var(--mono); }
-#sk_editor .cm-vim-message { color: var(--red) !important; }
+/* red on the dialog fails 4.5:1 in Nord, Dawn and Latte */
+#sk_editor .cm-vim-message { color: var(--text) !important; }
 #sk_editor .ace_scrollbar { scrollbar-color: var(--fill) transparent; }
 .ace_editor.ace_autocomplete { background: var(--bg); color: var(--text); border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--lift); }
 .ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line { background: var(--sel); }
 .ace_editor.ace_autocomplete .ace_line-hover { background: var(--hover); border-color: transparent; }
-.ace_editor.ace_autocomplete .ace_completion-highlight { color: var(--accent); }
+/* weight, not colour: accent on a selected row fails 4.5:1 in the light themes */
+.ace_editor.ace_autocomplete .ace_completion-highlight { color: inherit; font-weight: 700; }
 
 /* =====================================================================
    TAB CHOOSER (T): always a centred panel. Long lists become columns so
