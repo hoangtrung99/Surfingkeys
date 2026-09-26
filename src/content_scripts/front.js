@@ -29,6 +29,9 @@ function createFront(insert, normal, hints, visual, browser) {
     // it goes first, so settings.theme from the user's settings always lands on top.
     var _builtinTheme = null, _userTheme = false;
     function applyUserSettings() {
+        if (_builtinTheme && !_userTheme) {
+            self.command(Object.assign({}, _builtinTheme));
+        }
         for (var cmd of _uiUserSettings) {
             self.command(cmd);
         }
@@ -39,16 +42,6 @@ function createFront(insert, normal, hints, visual, browser) {
     function newFrontEnd() {
         frontendPromise = new Promise(function (resolve, reject) {
             createUiHost(browser, (res) => {
-                // Commands sent while the frame loaded wait on this promise and go
-                // out the moment it resolves: the theme goes first, directly, or the
-                // panel the first of them opens is drawn once without it.
-                if (_builtinTheme && !_userTheme) {
-                    runtime.postTopMessage({surfingkeys_uihost_data: Object.assign({
-                        toFrontend: true,
-                        origin: getDocumentOrigin(),
-                        id: generateQuickGuid(),
-                    }, _builtinTheme)});
-                }
                 resolve(res);
                 applyUserSettings();
             });

@@ -12,7 +12,6 @@ import {
     htmlEncode,
 } from '../common/utils.js';
 import KeyboardUtils from '../common/keyboardUtils';
-import './hosted.js';
 
 const EMPTY_TABS = 8;
 const MAX_TABS = 5;
@@ -81,20 +80,6 @@ function el(tag, className, text) {
     return e;
 }
 
-// Chrome refuses tabs.setZoom on its own pages, other extensions' pages and the
-// Web Store (tabs_api.cc), and has no source to show for most of them: those
-// rows would do nothing there.
-const OWN_PAGES = chrome.runtime.getURL('');
-const HOST_PAGE = chrome.runtime.getURL('pages/palette.html');
-function canZoom(tab) {
-    const url = (tab && tab.url) || '';
-    return url.startsWith(OWN_PAGES)
-        || (/^(https?|file):/i.test(url) && !/^https?:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)([/?#]|$)/i.test(url));
-}
-function hasSource(tab) {
-    return /^(https?|file):/i.test((tab && tab.url) || '');
-}
-
 // Every term must match somewhere; a title start beats a title hit beats the host beats the URL.
 function score(item, terms) {
     let total = 0;
@@ -157,10 +142,10 @@ export default function createPalette(omnibar, front, searchEngine) {
         // without this handler's onClose and keeps the palette's look
         {name: 'Move Tab to Window…', keys: 'W', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Windows'}), 100)},
         {name: 'Gather All Windows', keys: ';gw', also: 'merge', run: () => RUNTIME('gatherWindows')},
-        {name: 'Zoom In', keys: 'zi', when: canZoom, run: () => once('setZoom', {zoomFactor: 0.1})},
-        {name: 'Zoom Out', keys: 'zo', when: canZoom, run: () => once('setZoom', {zoomFactor: -0.1})},
-        {name: 'Reset Zoom', keys: 'zr', when: canZoom, run: () => once('setZoom', {zoomFactor: 0})},
-        {name: 'View Source', keys: 'gs', when: hasSource, run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
+        {name: 'Zoom In', keys: 'zi', run: () => once('setZoom', {zoomFactor: 0.1})},
+        {name: 'Zoom Out', keys: 'zo', run: () => once('setZoom', {zoomFactor: -0.1})},
+        {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},
+        {name: 'View Source', keys: 'gs', run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
         {name: 'Change Theme…', keys: ';T', also: 'color colour scheme appearance dark light', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Themes'}), 100)},
     ].map((a) => prep(Object.assign({kind: 'action', key: a.name}, a), a.name + ' ' + (a.also || ''), ''));
 
@@ -177,8 +162,7 @@ export default function createPalette(omnibar, front, searchEngine) {
     function buildItems(query) {
         const terms = fold(query).split(/\s+/).filter((t) => t.length);
         if (actionsMode) {
-            const usable = ACTIONS.filter((a) => !a.when || a.when(current));
-            return terms.length ? usable.filter((a) => score(a, terms) >= 0) : usable;
+            return terms.length ? ACTIONS.filter((a) => score(a, terms) >= 0) : ACTIONS.slice();
         }
         const others = tabs.filter((t) => !t.current);
         if (!terms.length) {
@@ -328,7 +312,7 @@ export default function createPalette(omnibar, front, searchEngine) {
                     return;
                 }
                 const seen = new Set();
-                pages = bookmarks.concat(history).filter((p) => p.url && !p.url.startsWith(HOST_PAGE) && !seen.has(p.pageKey) && seen.add(p.pageKey));
+                pages = bookmarks.concat(history).filter((p) => p.url && !seen.has(p.pageKey) && seen.add(p.pageKey));
                 update(true);
             };
             RUNTIME('getHistory', {query: '', maxResults: HISTORY_SNAPSHOT}, (r) => {

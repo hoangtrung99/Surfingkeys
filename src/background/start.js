@@ -1396,10 +1396,6 @@ function start(browser) {
             active: message.tab.active,
             index: newTabPosition,
             pinned: message.tab.pinned,
-            // the tab's own window: left out, Chrome picks the current one, and
-            // when that is the palette's fallback window it refuses an opener
-            // from another window and opens nothing
-            windowId: currentTab.windowId,
             openerTabId: currentTab.id
         };
         if (message.tab.cookieStoreId) {

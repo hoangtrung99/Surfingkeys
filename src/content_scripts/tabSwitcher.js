@@ -9,22 +9,12 @@
 // keyboard focus (an editor, an embedded comment box) is where Alt is released
 // and where keys typed ahead land, even when Surfingkeys has not initialised it.
 // Such a frame reports to the top frame, which is the one that talks to the UI.
-//
-// On a tab Surfingkeys cannot run in, the background opens pages/palette.html
-// in the toolbar dropdown (or a small window) instead; this module is what
-// drives it there (startHosted).
-import { RUNTIME, runtime } from './common/runtime.js';
+import { runtime } from './common/runtime.js';
 import { generateQuickGuid } from './common/utils.js';
-import { THEME_KEY } from './common/themes.js';
 import Mode from './common/mode.js';
 
-const HOSTED = window === top && location.href.startsWith(chrome.runtime.getURL('pages/palette.html'));
-// palette.html loads its frontend frame from scratch, so the input takes longer to get the keyboard
-const TYPE_AHEAD_MS = HOSTED ? 2000 : 500;
+const TYPE_AHEAD_MS = 500;
 const CLAIM_WAIT_MS = 100;
-const CLOSE_MS = 250;          // outlasts the 100 ms between a palette row and the omnibar it opens
-const BANNER_MS = 1200;        // long enough to read "Copied"
-const NEVER_SHOWN_MS = 5000;
 const MSG = 'surfingkeys_tabswitcher';
 
 let altHeld = false;
@@ -40,20 +30,15 @@ function hasKeyboardFocus() {
     return document.hasFocus() && !(active && /^(IFRAME|FRAME)$/.test(active.tagName));
 }
 
-function uiFrame() {
+// The frontend frame is interactive (a panel, not just the status strip).
+function isPanelOpen() {
     for (const el of document.documentElement.children) {
         const frame = el.shadowRoot && el.shadowRoot.querySelector('iframe.sk_ui');
         if (frame) {
-            return frame;
+            return frame.style.pointerEvents === 'all';
         }
     }
-    return null;
-}
-
-// The frontend frame is interactive (a panel, not just the status strip).
-function isPanelOpen() {
-    const frame = uiFrame();
-    return !!frame && frame.style.pointerEvents === 'all';
+    return false;
 }
 
 function deliver(data) {
@@ -178,90 +163,6 @@ runtime.on('tabSwitcherCommand', (msg, sender, response) => {
     }
 });
 
-// palette.html: the page is the panel. It opens the panel it was opened for,
-// takes what the background hands over, and closes once the panel does.
-let hostedStarted = false;
-function startHosted() {
-    const query = new URLSearchParams(location.search);
-    const n = query.get('n');
-    const inWindow = query.get('surface') === 'window';
-    const early = window.__skEarly;  // keys typed before this ran (palette_boot.js)
-    let closed = false, shown = false, closeTimer = null;
-    session = generateQuickGuid();  // one switcher for the page's life: an Alt released here confirms it
-
-    function close() {
-        if (!closed) {
-            closed = true;
-            RUNTIME('tabSwitcherHosted', {done: true, n});
-            // the background closes the fallback window's tab; this is for when it cannot
-            setTimeout(() => window.close(), inWindow ? 500 : 0);
-        }
-    }
-    function run(action) {
-        document.documentElement.dataset.ui = action;  // the dropdown follows the page's size
-        if (action === 'palette') {
-            start('openPalette');
-        } else {
-            // straight to the frontend, not through deliver(): each press there
-            // is a new switcher, here they are one, and the later ones move it
-            host.command({action: 'openSwitcher', session});
-            relayArmed = true;
-        }
-    }
-
-    // Normal mode runs in this page as in any other, and the background acts
-    // on the blocked tab for any request from it: a stray 'x' here would close
-    // that tab. Nothing here is for the page's own keys.
-    const sink = new Mode("PaletteHost");
-    sink.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            close();
-        } else if (holding && !e.metaKey && !e.ctrlKey) {
-            holdKey(e);
-        }
-        e.sk_stopPropagation = true;
-    }).addEventListener('keyup', (e) => {
-        e.sk_stopPropagation = true;
-    });
-    sink.enter(9999, true);
-
-    runtime.on('tabSwitcherHosted', (msg) => {
-        if (msg.n === n) {
-            msg.action === 'close' ? close() : run(msg.action);
-        }
-    });
-
-    // The theme's own request went out first: its answer is in by now, so the
-    // frontend is created with the theme and draws the panel in it straight away.
-    RUNTIME('localData', {data: THEME_KEY}, () => {
-        run(document.documentElement.dataset.ui === 'switcher' ? 'switcher' : 'palette');
-        if (early) {
-            early.stop();
-            holding && (buffer = early.keys + buffer);
-        }
-        const frame = uiFrame();
-        // the panel closed: so does the page, unless another one opens right after
-        frame && new MutationObserver(() => {
-            clearTimeout(closeTimer);
-            if (frame.style.pointerEvents === 'all') {
-                shown = true;
-            } else if (shown) {
-                closeTimer = setTimeout(close, parseFloat(frame.style.height) > 0 ? BANNER_MS : CLOSE_MS);
-            }
-        }).observe(frame, {attributes: true, attributeFilter: ['style']});
-        setTimeout(() => shown || close(), NEVER_SHOWN_MS);
-        // what was pressed while this loaded, or null: nobody is waiting for this page
-        RUNTIME('tabSwitcherHosted', {ready: true, n}, (resp) => {
-            const queue = resp && resp.queue;
-            Array.isArray(queue) ? queue.forEach(run) : close();
-        });
-    });
-    // the window came back (a click on its title bar): the panel wants the keys
-    window.addEventListener('focus', () => {
-        isPanelOpen() && uiFrame().focus();
-    });
-}
-
 export default function installTabSwitcher(api, front) {
     if (window === top) {
         host = front;
@@ -280,8 +181,4 @@ export default function installTabSwitcher(api, front) {
     api.mapkey('<Alt-Q>', '#3Visual tab switcher, previous tab', () => start('openSwitcher', altHeld, true));
     api.mapkey('<Meta-P>', '#8Command palette', () => start('openPalette'));
     api.mapkey('<Ctrl-P>', '#8Command palette', () => start('openPalette'));
-    if (HOSTED && !hostedStarted) {
-        hostedStarted = true;
-        startHosted();
-    }
 }
