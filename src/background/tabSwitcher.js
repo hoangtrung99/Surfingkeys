@@ -272,12 +272,12 @@ export default function installTabSwitcher(self, _response) {
             if (message.switcher && currentId !== -1) {
                 switcherTab = currentId;
             }
+            const pos = new Map(mru.map((id, i) => [id, i]));  // touch() keeps ids unique
             const rank = (t) => {
                 if (t.id === currentId) {
                     return -1;
                 }
-                const i = mru.indexOf(t.id);
-                return i === -1 ? Infinity : i;
+                return pos.has(t.id) ? pos.get(t.id) : Infinity;
             };
             tabs.sort((a, b) => (rank(a) - rank(b)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
             const currentWindow = sender.tab ? sender.tab.windowId : -1;
