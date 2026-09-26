@@ -86,6 +86,64 @@ function createUiHost(browser, onload) {
 
     var lastStateOfPointerEvents = "none", _origOverflowY;
     var _actions = {}, activeContent = null;
+
+    // An element in fullscreen (a video player) is drawn in the top layer, above this
+    // host: a panel opened under it takes the keys while nobody can see it, and the
+    // switcher would switch to a tab the user never saw. So while the frame is
+    // interactive it goes where it shows, and the page stays in fullscreen: into the
+    // fullscreen element when that draws it (moveBefore keeps the frame loaded,
+    // where a plain move would reload it), else into the top layer as a popover,
+    // which Chrome draws above the fullscreen element but does not hit-test, so keys
+    // reach the frame and a click reaches the page.
+    var raisedAs = null, hostStyle = "";
+    function raise() {
+        var fs = document.fullscreenElement;
+        if (raisedAs || !fs || fs.contains(uiHost)) {
+            return;
+        }
+        // children of a replaced element are never drawn, nor those of a shadow host
+        // that does not slot them
+        if (fs.moveBefore && !/^(VIDEO|AUDIO|IFRAME|FRAME|IMG|CANVAS|EMBED|OBJECT)$/.test(fs.tagName)) {
+            try {
+                fs.moveBefore(uiHost, null);
+                raisedAs = "moved";
+            } catch (e) {
+                // not a place it can go: the popover below
+            }
+            if (raisedAs && uiHost.getClientRects().length) {
+                return;
+            }
+            lower();
+        }
+        if (uiHost.showPopover) {
+            hostStyle = uiHost.style.cssText;
+            uiHost.popover = "manual";
+            // undo the UA's popover box, a bordered and padded square in mid screen
+            Object.assign(uiHost.style, {position: "fixed", inset: "auto", width: "0", height: "0", margin: "0",
+                border: "0", padding: "0", overflow: "visible", background: "transparent"});
+            uiHost.showPopover();
+            raisedAs = "popover";
+        }
+    }
+    function lower() {
+        if (raisedAs === "moved" && uiHost.isConnected && uiHost.parentNode !== document.documentElement) {
+            document.documentElement.moveBefore(uiHost, null);
+        } else if (raisedAs === "popover") {
+            uiHost.matches(":popover-open") && uiHost.hidePopover();
+            uiHost.removeAttribute("popover");
+            uiHost.style.cssText = hostStyle;
+        }
+        raisedAs = null;
+    }
+    // entering fullscreen also hides every popover
+    function onFullscreenChange() {
+        lower();
+        if (lastStateOfPointerEvents !== "none") {
+            raise();
+        }
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+
     _actions['initFrontendAck'] = function(response) {
         onload(uiHost);
     };
@@ -95,6 +153,7 @@ function createUiHost(browser, onload) {
             ifr.style.pointerEvents = response.pointerEvents;
         }
         if (response.pointerEvents === "none") {
+            lower();
             uiHost.blur();
             ifr.blur();
             // test with https://docs.google.com/ and https://web.whatsapp.com/
@@ -112,6 +171,7 @@ function createUiHost(browser, onload) {
                 document.body.style.overflowY = _origOverflowY;
             }
         } else {
+            raise();
             if (browser.focusFrontend) {
                 browser.focusFrontend(ifr);
             }
@@ -139,6 +199,7 @@ function createUiHost(browser, onload) {
                 action: 'frontendDestroyed',
             }});
             window.removeEventListener('message', _onWindowMessage, true);
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
             uiHost.remove();
         } else {
             LOG("warn", "frontend in use");
