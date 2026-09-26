@@ -76,13 +76,18 @@ export default function installTabSwitcher(self, _response) {
         });
     }
 
+    let commandSeq = 0;
     chrome.commands.onCommand.addListener((command, tab) => {
         if (!COMMANDS.hasOwnProperty(command)) {
             return;  // start.js owns the rest
         }
         // Every frame gets it; the one holding keyboard focus opens the UI
         // (content_scripts/tabSwitcher.js), so Alt is tracked where it is released.
-        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]}, () => {
+        // More than one frame can believe it holds the focus (an iframe inside a
+        // shadow root), so the top frame acts once per cmdId: a second open of the
+        // same press would close the palette again or move the switcher one tab on.
+        const cmdId = `${Date.now()}:${++commandSeq}`;
+        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command], cmdId}, () => {
             if (chrome.runtime.lastError && command === 'tabSwitcher') {
                 switchToPrevious(t);
             }
