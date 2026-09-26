@@ -614,6 +614,11 @@ function start(browser) {
             handleMessage(m, s, r);
         });
         chrome.runtime.onInstalled.addListener((e) => {
+            // chrome.userScripts is missing until "Allow User Scripts" is on, which the
+            // built-in themes do not need; updateSettings configures the world later
+            if (!isUserScriptsAvailable()) {
+                return;
+            }
             chrome.userScripts.configureWorld({
                 csp: 'script-src \'self\' \'unsafe-eval\'',
                 messaging: true
