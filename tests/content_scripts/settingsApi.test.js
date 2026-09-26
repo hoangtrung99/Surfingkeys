@@ -222,6 +222,23 @@ describe('search aliases', () => {
         expect(h.toUiHost).toHaveBeenCalledWith({ surfingkeys_uihost_data: expect.objectContaining({ id: 'sug1', data: ['FOO', 'FOB'], toFrontend: true }) });
     });
 
+    test("a parser that throws answers the frontend with no suggestions", async () => {
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            userScript((api) => api.addSearchAlias('k', 'kagi', SEARCH, 's', SUGGEST, () => {
+                throw new Error('bad JSON');
+            }));
+            h.message({
+                action: 'getSearchSuggestions', ack: true, id: 'sug2', origin: 'chrome-extension://x',
+                url: SUGGEST, requestUrl: `${SUGGEST}fo`, query: 'fo', response: { text: '<html>' },
+            });
+            await h.settle();
+            expect(h.toUiHost).toHaveBeenCalledWith({ surfingkeys_uihost_data: expect.objectContaining({ id: 'sug2', data: [] }) });
+        } finally {
+            error.mockRestore();
+        }
+    });
+
     test('removeSearchAlias undoes it', async () => {
         userScript((api) => api.addSearchAlias('k', 'kagi', SEARCH));
         userScript((api) => api.removeSearchAlias('k'));
@@ -273,6 +290,31 @@ describe('commands and omnibar callbacks', () => {
         userScript((api) => api.Front.openOmnibar({ type: 'UserURLs', extra: [] }));
         h.message({ action: 'userURLs_entered', item: { url: 'https://docs.example/' }, ctrlKey: false, tabbed: true });
         expect(requests()).toEqual([expect.objectContaining({ action: 'openLink', url: 'https://docs.example/', tab: { tabbed: true, active: true } })]);
+    });
+
+    test("Front.showEditor hands what the editor saved to the settings' onWrite", () => {
+        const written = [];
+        userScript((api) => api.Front.showEditor('draft', (data) => written.push(data), 'url'));
+        expect(h.ui('showEditor')).toEqual([expect.objectContaining({ type: 'url', content: 'draft' })]);
+        h.message({ action: 'ace_editor_saved', data: 'final' });
+        expect(written).toEqual(['final']);
+    });
+
+    test.each([
+        ['Front.showBanner', (api) => api.Front.showBanner('hi there'), { action: 'showBanner', content: 'hi there' }],
+        ['Front.showPopup', (api) => api.Front.showPopup('<b>hi</b>'), { action: 'showPopup', content: '<b>hi</b>' }],
+    ])('%s reaches the frontend', (_, uf, request) => {
+        userScript(uf);
+        expect(h.ui(request.action)).toEqual([expect.objectContaining(request)]);
+    });
+
+    test.each([
+        ['Normal.jumpVIMark', (api) => api.Normal.jumpVIMark('a'), { action: 'jumpVIMark', mark: 'a' }],
+        ['readText', (api) => api.readText('hello'), { action: 'read', content: 'hello' }],
+        ['RUNTIME', (api) => api.RUNTIME('getTabs', { queryInfo: { audible: true } }), { action: 'getTabs', queryInfo: { audible: true } }],
+    ])('%s reaches the background', (_, uf, request) => {
+        userScript(uf);
+        expect(requests()).toEqual([expect.objectContaining(request)]);
     });
 
     test('Clipboard.write and Clipboard.read reach the system clipboard', () => {
