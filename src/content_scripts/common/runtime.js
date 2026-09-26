@@ -29,7 +29,18 @@ function RUNTIME(action, args, callback) {
     }
     try {
         args.needResponse = callback !== undefined;
-        chrome.runtime.sendMessage(args, callback);
+        chrome.runtime.sendMessage(args, callback && function(response) {
+            // No answer: the background went away before replying (the extension was
+            // reloaded or updated, or the browser stopped its service worker). Reading
+            // lastError keeps that off the extension's error page, and the caller,
+            // written for an answer, is not handed none.
+            // (the answer can also land just as that happens, in a frame whose
+            // chrome.runtime is already dead: the caller would throw on first use)
+            if (chrome.runtime.lastError || !chrome.runtime.id) {
+                return;
+            }
+            callback(response);
+        });
         if (action === 'read') {
             runtime.on('onTtsEvent', callback);
         }
@@ -130,10 +141,7 @@ const runtime = (function() {
             resolve(window.location.href);
         } else {
             RUNTIME("getTopURL", null, function(rs) {
-                // no answer while the background restarts (the extension was just
-                // reloaded under an open page): reading lastError keeps it off the
-                // console, and a frame's referrer is its parent's URL
-                resolve(chrome.runtime.lastError || !rs ? document.referrer : rs.url);
+                resolve(rs.url);
             });
         }
     });
