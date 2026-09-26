@@ -24,5 +24,6 @@ import sites from './sites.js';
 import advanced from './advanced.js';
 import proxy from './proxy.js';
 import backup from './backup.js';
+import about from './about.js';
 
-export default [appearance, keys, search, sites, advanced, proxy, backup];
+export default [appearance, keys, search, sites, advanced, proxy, backup, about];
