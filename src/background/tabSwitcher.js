@@ -265,6 +265,7 @@ export default function installTabSwitcher(self, _response) {
                     pinned: t.pinned,
                     audible: t.audible,
                     current: t.id === currentId,
+                    incognito: t.incognito,
                     otherWindow: currentWindow !== -1 && t.windowId !== currentWindow,
                 })),
             });

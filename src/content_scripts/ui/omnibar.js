@@ -61,6 +61,7 @@ function createOmnibar(front, clipboard) {
         feature_group: 8,
         code: function () {
             var fi = self.resultsDiv.querySelector('li.focused');
+            if (handler && handler.onDelete && handler.onDelete(fi)) return;
             if (fi && fi.uid) {
                 RUNTIME("removeURL", {
                     uid: fi.uid
@@ -416,6 +417,7 @@ function createOmnibar(front, clipboard) {
         annotation: "Forward cycle through the candidates.",
         feature_group: 8,
         code: function () {
+            if (handler && handler.onTab && handler.onTab()) return;
             rotateResult(getPosition() === "bottom");
         }
     });

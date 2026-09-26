@@ -633,7 +633,7 @@ div.sk_arrow[dir=up]>div:nth-of-type(2) {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Command palette (palette.js): one-line tab rows and a footer */
+/* Command palette (palette.js): one flat list of one-line rows */
 #sk_omnibar.sk_palette #sk_omnibarSearchResult {
     overflow-y: auto;
 }
@@ -655,16 +655,35 @@ div.sk_arrow[dir=up]>div:nth-of-type(2) {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-#sk_omnibar.sk_palette .sk_palette_host {
+#sk_omnibar.sk_palette .sk_palette_sub {
     color: #555;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-#sk_omnibar.sk_palette .sk_palette_badge {
+#sk_omnibar.sk_palette .sk_palette_meta,
+#sk_omnibar.sk_palette .sk_palette_keys {
     flex: none;
     margin-left: auto;
-    padding: 1px 6px;
-    border-radius: 4px;
     font-size: 11px;
+    color: #555;
+}
+/* what Enter does, on the selected row only */
+#sk_omnibar.sk_palette .sk_palette_label {
+    display: none;
+    flex: none;
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: bold;
+}
+#sk_omnibar.sk_palette li.focused .sk_palette_label {
+    display: inline;
+}
+#sk_omnibar.sk_palette .sk_palette_meta + .sk_palette_label {
+    margin-left: 8px;
+}
+#sk_omnibarSearchArea .prompt.sk_palette_chip {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
     background: rgba(127, 127, 127, 0.18);
 }
