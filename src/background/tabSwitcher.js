@@ -100,7 +100,9 @@ export default function installTabSwitcher(self, _response) {
     });
 
     // Tell the user once, at install, when another extension (jump, for example)
-    // already holds a shortcut: Chrome then leaves ours unassigned, silently.
+    // already holds a shortcut: Chrome then leaves ours unassigned, silently. It does
+    // the same with a key Chrome keeps for itself, which is why the palette is not
+    // Ctrl+Shift+P (print) on Windows and Linux (tabSwitcher.commands.json).
     chrome.runtime.onInstalled.addListener((details) => {
         if (details.reason !== 'install') {
             return;

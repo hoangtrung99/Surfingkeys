@@ -208,7 +208,8 @@ export default function installTabSwitcher(api, front) {
     });
     // Fallbacks for when the browser shortcuts are unassigned. They cannot fire
     // while another extension holds the same shortcut. Shift on a letter is
-    // written as upper case.
+    // written as upper case. <Ctrl-P> is also the palette's key in pages on Windows
+    // and Linux, where Chrome keeps Ctrl+Shift+P from the browser shortcut.
     api.mapkey('<Alt-q>', '#3Visual tab switcher', () => start('openSwitcher', altHeld, false));
     api.mapkey('<Alt-Q>', '#3Visual tab switcher, previous tab', () => start('openSwitcher', altHeld, true));
     api.mapkey('<Meta-P>', '#8Command palette', () => start('openPalette'));
