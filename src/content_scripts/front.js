@@ -819,14 +819,18 @@ function createFront(insert, normal, hints, visual, browser) {
         _active = true;
     };
 
-    // What this tab's frontend asks of the page (ui/themeMenu.js), relayed by the
-    // background (frontendRequest). Never an _actions entry: the page can post to
-    // this window like any content script, and a theme pick writes settings.
-    // theme.js sets pickTheme.
+    // What this tab's frontend asks of the page (ui/palette.js, ui/themeMenu.js),
+    // relayed by the background (frontendRequest). Never an _actions entry: the page
+    // can post to this window like any content script, and a theme pick or a
+    // blocklist toggle writes settings. theme.js sets pickTheme.
     if (window === top) {
         runtime.on('frontendRequest', function(msg) {
             if (msg.request === 'pickTheme') {
                 self.pickTheme && self.pickTheme(msg.name);
+            } else if (msg.request === 'toggleBlocklist') {
+                normal.toggleBlocklist();
+            } else if (msg.request === 'showUsage') {
+                self.showUsage();
             }
         });
     }

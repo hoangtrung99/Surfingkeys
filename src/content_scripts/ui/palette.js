@@ -6,7 +6,9 @@
 // search engine's suggestions. Tab on an empty input lists actions instead.
 //
 // Nothing here that acts is reachable over window.postMessage, which the page can
-// post to like any content script: typed-ahead keys come over chrome.runtime.
+// post to like any content script: typed-ahead keys come over chrome.runtime, and
+// actions that belong to the page (a blocklist toggle, its key mappings) go to it
+// the same way (frontendRequest).
 import { RUNTIME, runtime } from '../common/runtime.js';
 import {
     attachFaviconToImgSrc,
@@ -166,7 +168,21 @@ export default function createPalette(omnibar, front, searchEngine) {
         {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},
         {name: 'View Source', keys: 'gs', run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
         {name: 'Change Theme…', keys: ';T', also: 'color colour scheme appearance dark light', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Themes'}), 100)},
+        {name: 'Settings…', keys: ';e', also: 'options preferences', run: () => openSettings('')},
+        {name: 'Settings: Appearance', also: 'options preferences', run: () => openSettings('appearance')},
+        {name: 'Settings: Keys', also: 'options preferences remap', run: () => openSettings('keys')},
+        {name: 'Settings: Sites', also: 'options preferences blocklist', run: () => openSettings('sites')},
+        // the page's own frame toggles it: from this frame it would turn Surfingkeys off everywhere
+        {name: 'Disable / Enable Surfingkeys on This Site', keys: 'Alt-s', also: 'turn off on toggle blocklist', run: () => RUNTIME('frontendRequest', {request: 'toggleBlocklist'})},
+        {name: 'Keyboard Shortcuts…', also: 'browser commands hotkeys', run: () => RUNTIME('openLink', {tab: {tabbed: true, active: true}, url: 'chrome://extensions/shortcuts'})},
+        // the page lists them: it holds the user's own mappings
+        {name: 'Show All Key Mappings', keys: '?', also: 'help usage', run: () => RUNTIME('frontendRequest', {request: 'showUsage'})},
     ].map((a) => prep(Object.assign({kind: 'action', key: a.name}, a), a.name + ' ' + (a.also || ''), ''));
+
+    // the settings page opens on the section named in its hash
+    function openSettings(section) {
+        RUNTIME('openLink', {tab: {tabbed: true, active: true}, url: '/pages/options.html' + (section && '#' + section)});
+    }
 
     function urlOf(item) {
         if (item.kind === 'tab' || item.kind === 'page' || item.kind === 'url') {
