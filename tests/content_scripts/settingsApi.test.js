@@ -373,15 +373,24 @@ describe('settings.*', () => {
         expect(h.ui('showPopup')).toEqual([expect.objectContaining({ content: '[SurfingKeys] Error found in settings: Error: boom' })]);
     });
 
-    test('settings.theme wins over a built-in theme picked later', async () => {
+    test('settings.theme wins over the built-in theme picked in any tab', async () => {
+        const { THEME_KEY } = require('../../src/content_scripts/common/themes.js');
+        // a pick reaches every tab as a settings change (theme.js)
+        h.settingsUpdated({ [THEME_KEY]: 'nord' });
+        await h.settle();
+        expect(h.ui('applyBuiltinTheme')).toEqual([expect.objectContaining({ theme: 'nord' })]);
+
         userScript((api, settings) => {
             settings.theme = '#sk_status { color: red; }';
         });
         await h.settle();
         expect(h.front.hasUserTheme()).toBe(true);
         expect(h.ui('applyUserSettings')).toEqual([expect.objectContaining({ userSettings: { theme: '#sk_status { color: red; }' } })]);
-        h.message({ action: 'pickTheme', name: 'nord' });
-        expect(h.ui('showBanner')).toEqual([expect.objectContaining({ content: 'Theme: Nord, but settings.theme in your settings overrides it' })]);
+
+        h.frontCmd.mockClear();
+        h.settingsUpdated({ [THEME_KEY]: 'dawn' });
+        await h.settle();
+        expect(h.ui('applyBuiltinTheme')).toEqual([]);
     });
 });
 
