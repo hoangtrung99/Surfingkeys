@@ -1,4 +1,4 @@
-import LLMTools from '../../src/content_scripts/ui/llmtools.js';
+import LLMTools, { OPEN_SETTLE_MS } from '../../src/content_scripts/ui/llmtools.js';
 import { runtime } from '../../src/content_scripts/common/runtime.js';
 
 const mockRUNTIME = jest.fn();
@@ -1081,6 +1081,19 @@ describe('llmtools', () => {
     });
 
     describe('open_url', () => {
+        // Every test here depends on the order of the mocked answers, never on the
+        // settle time passing, so open_url's settle wait is cut to 0 ms; a test that
+        // needs a tab to change during that window has to advance time itself.
+        let settle;
+        beforeEach(() => {
+            const realSetTimeout = global.setTimeout;
+            settle = jest.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...rest) =>
+                realSetTimeout(fn, ms === OPEN_SETTLE_MS ? 0 : ms, ...rest));
+        });
+        afterEach(() => {
+            settle.mockRestore();
+        });
+
         /*
          * A browser in which a tab really appears: `open_url` identifies the tab it
          * opened by being NEW, so `getTabs` has to answer differently before and
