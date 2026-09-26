@@ -167,6 +167,14 @@ if (window === top) {
 // when focus is outside the page (address bar), or when the focused subframe
 // has no content script to answer.
 runtime.on('tabSwitcherCommand', (msg, sender, response) => {
+    // The frontend frame is made only once there is a <body> (front.js), which an
+    // SVG image or an XML feed never has, and a page still loading its <head> not
+    // yet. Nothing would show, so the background falls back as it does where no
+    // content script answers, and no keys are held for a palette that never opens.
+    if (window === top && (!host || !document.body)) {
+        response({shown: false});
+        return;
+    }
     response({});  // tells the background a content script is here
     if (hasKeyboardFocus()) {
         start(msg.action, altHeld);

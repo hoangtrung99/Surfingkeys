@@ -82,8 +82,10 @@ export default function installTabSwitcher(self, _response) {
         }
         // Every frame gets it; the one holding keyboard focus opens the UI
         // (content_scripts/tabSwitcher.js), so Alt is tracked where it is released.
-        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]}, () => {
-            if (chrome.runtime.lastError && command === 'tabSwitcher') {
+        // No content script to answer, or one in a page that cannot show the UI
+        // (no <body> yet, an SVG or XML document): the switcher falls back the same way.
+        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]}, (resp) => {
+            if ((chrome.runtime.lastError || (resp && resp.shown === false)) && command === 'tabSwitcher') {
                 switchToPrevious(t);
             }
         });
