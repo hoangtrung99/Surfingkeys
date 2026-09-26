@@ -202,14 +202,19 @@ export default function installTabSwitcher(self, _response) {
                         if (chrome.runtime.lastError || !now || !now.active || now.url !== tab.url) {
                             return;
                         }
-                        shrink(dataUrl).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
+                        shrink(dataUrl, now.width).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
                     });
                 });
             });
         });
     }
-    function shrink(dataUrl) {
-        return fetch(dataUrl).then((r) => r.blob()).then((blob) => createImageBitmap(blob)).then((img) => {
+    // `tabWidth` is in CSS pixels, and the capture has at least that many: from
+    // THUMB_WIDTH up, decoding straight to the thumbnail's size skips the full-size
+    // bitmap (15 MB for a 1280px window at DPR 2). Below it, that would upscale.
+    function shrink(dataUrl, tabWidth) {
+        return fetch(dataUrl).then((r) => r.blob()).then((blob) => {
+            return tabWidth >= THUMB_WIDTH ? createImageBitmap(blob, {resizeWidth: THUMB_WIDTH, resizeQuality: 'medium'}) : createImageBitmap(blob);
+        }).then((img) => {
             const scale = Math.min(1, THUMB_WIDTH / img.width);
             const canvas = new OffscreenCanvas(Math.round(img.width * scale), Math.round(img.height * scale));
             canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
