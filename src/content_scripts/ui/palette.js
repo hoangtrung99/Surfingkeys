@@ -80,6 +80,21 @@ function el(tag, className, text) {
     return e;
 }
 
+// Highlight on the raw title, then escape each piece: highlighting the escaped
+// title would match inside "&amp;" and show "AT&amp;T".
+function highlight(rxp, text) {
+    if (!rxp) {
+        return htmlEncode(text);
+    }
+    let out = '', last = 0;
+    text.replace(rxp, (m, offset) => {
+        out += htmlEncode(text.slice(last, offset)) + '<span class="omnibar_highlight">' + htmlEncode(m) + '</span>';
+        last = offset + m.length;
+        return m;
+    });
+    return out + htmlEncode(text.slice(last));
+}
+
 // Every term must match somewhere; a title start beats a title hit beats the host beats the URL.
 function score(item, terms) {
     let total = 0;
@@ -115,7 +130,7 @@ export default function createPalette(omnibar, front, searchEngine) {
     const ui = document.getElementById('sk_omnibar');
     const hint = ui.querySelector('#sk_omnibarSearchArea .resultPage');
     let tabs = null, current = null, pages = [], actionsMode = false;
-    let seq = 0, lastPointer = null, pendingEnter = null;
+    let seq = 0, lastPointer = null, pendingEnter = null, pendingTab = false;
     let suggestions = [], sugFor = '', sugSeq = 0, sugTimer = null;
 
     // Each acts on the tab that hosts the palette. RUNTIME copies RUNTIME.repeats
@@ -182,7 +197,8 @@ export default function createPalette(omnibar, front, searchEngine) {
             (a, b) => (b.bookmark - a.bookmark) || ((b.typedCount > 0) - (a.typedCount > 0)) || ((b.lastVisitTime || 0) - (a.lastVisitTime || 0)));
         items.push(...pageRows.slice(0, MAX_PAGES).map((page) => ({kind: 'page', key: 'page' + page.pageKey, page, url: page.url})));
         if (omnibar.isUrl(query)) {
-            const url = /^[a-z][\w+.-]*:/i.test(query) ? query : 'https://' + query;
+            // a scheme, but not host:port ("localhost:3000")
+            const url = /^[a-z][\w+.-]*:(?!\d)/i.test(query) ? query : 'https://' + query;
             items.push({kind: 'url', key: 'url', url});
         }
         const alias = runtime.conf.defaultSearchEngine;
@@ -246,8 +262,8 @@ export default function createPalette(omnibar, front, searchEngine) {
                 : item.kind === 'action' ? item.name
                     : item.kind === 'url' ? item.url : item.query;
         const row = el('div', 'sk_palette_row');
-        // titles come from web pages: encode, then let highlight() add its spans
-        row.append(createElementWithContent('span', omnibar.highlight(rxp, htmlEncode(title)), {class: 'sk_palette_title'}));
+        // titles come from web pages: every piece is encoded, only the spans are markup
+        row.append(createElementWithContent('span', highlight(rxp, title), {class: 'sk_palette_title'}));
         if (item.kind === 'page') {
             row.append(el('span', 'sk_palette_sub', shortPath(item.url)));
         }
@@ -337,6 +353,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         omnibar.promptSpan.classList.remove('sk_palette_chip');
         hint.textContent = '';
         tabs = current = lastPointer = pendingEnter = null;
+        pendingTab = false;
         pages = [];
         suggestions = [];
         sugFor = '';
@@ -385,6 +402,11 @@ export default function createPalette(omnibar, front, searchEngine) {
             const bang = query.match(/^!(\S+)\s+(.+)$/);
             bang && searchEngine.aliases.hasOwnProperty(bang[1])
                 ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(runtime.conf.defaultSearchEngine, query);
+        }
+        if (pendingTab) {  // Tab was typed ahead, before the tab list arrived
+            pendingTab = false;
+            self.onTab();
+            return;
         }
         if (pendingEnter) {  // Enter was pressed before the tab list arrived
             const keys = pendingEnter;
@@ -469,6 +491,13 @@ export default function createPalette(omnibar, front, searchEngine) {
             input.value = message.text + input.value;
             input.setSelectionRange(input.value.length, input.value.length);
             omnibar.triggerInput();
+            if (message.then === 'Enter') {
+                self.onEnter.call({tabbed: !!(omnibar.tabbed ^ !!message.shift), activeTab: true}) && front.hidePopup();
+            } else if (message.then === 'Escape') {
+                front.hidePopup();
+            } else if (message.then === 'Tab') {
+                tabs ? self.onTab() : (pendingTab = true);
+            }
         }
     };
 
