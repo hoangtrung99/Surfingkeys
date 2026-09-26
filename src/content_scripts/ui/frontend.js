@@ -9,6 +9,7 @@ import {
     htmlEncode,
     initL10n,
     initSKFunctionListener,
+    localizeAnnotation,
     refreshHints,
     rotateInput,
     setSanitizedContent,
@@ -375,15 +376,6 @@ const Front = (function() {
             });
         });
     };
-
-    function localizeAnnotation(locale, annotation) {
-        if (annotation.constructor.name === "Array") {
-            const fmt = annotation[0];
-            return locale(fmt).format(...annotation.slice(1));
-        } else {
-            return locale(annotation);
-        }
-    }
 
     function buildUsage(metas, cb) {
         var feature_groups = [
