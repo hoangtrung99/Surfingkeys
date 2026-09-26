@@ -172,10 +172,8 @@ export default function createPalette(omnibar, front, searchEngine) {
         if (item.kind === 'tab' || item.kind === 'page' || item.kind === 'url') {
             return item.url;
         }
-        if (item.kind === 'search' || item.kind === 'suggestion') {
-            return constructSearchURL(searchEngine.aliases[item.alias].url, encodeURIComponent(item.query));
-        }
-        return '';
+        const engine = (item.kind === 'search' || item.kind === 'suggestion') && searchEngine.aliases[item.alias];
+        return engine ? constructSearchURL(engine.url, encodeURIComponent(item.query)) : '';
     }
 
     function buildItems(query) {
@@ -205,7 +203,10 @@ export default function createPalette(omnibar, front, searchEngine) {
             const url = /^[a-z][\w+.-]*:(?!\d)/i.test(query) ? query : 'https://' + query;
             items.push({kind: 'url', key: 'url', url});
         }
-        const alias = runtime.conf.defaultSearchEngine;
+        const alias = searchEngine.defaultAlias();
+        if (!alias) {
+            return items;
+        }
         items.push({kind: 'search', key: 'search', alias, query});
         return items.concat(suggestionItems(alias, query));
     }
@@ -294,7 +295,7 @@ export default function createPalette(omnibar, front, searchEngine) {
             RUNTIME('focusTab', {windowId: item.tab.windowId, tabId: item.tab.id});
         } else if (item.kind === 'action') {
             item.run();
-        } else {
+        } else if (urlOf(item)) {
             RUNTIME('openLink', {tab: how || {tabbed: true, active: true}, url: urlOf(item)});
         }
     }
@@ -405,7 +406,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         if (!keepFocus && !actionsMode && query) {
             const bang = query.match(/^!(\S+)\s+(.+)$/);
             bang && searchEngine.aliases.hasOwnProperty(bang[1])
-                ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(runtime.conf.defaultSearchEngine, query);
+                ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(searchEngine.defaultAlias(), query);
         }
         if (pendingTab) {  // Tab was typed ahead, before the tab list arrived
             pendingTab = false;
@@ -481,7 +482,7 @@ export default function createPalette(omnibar, front, searchEngine) {
                 return true;
             }
         } else if (omnibar.input.value.trim() && !actionsMode) {
-            activate({kind: 'search', alias: runtime.conf.defaultSearchEngine, query: omnibar.input.value.trim()}, how);
+            activate({kind: 'search', alias: searchEngine.defaultAlias(), query: omnibar.input.value.trim()}, how);
         }
         return how.active;
     };

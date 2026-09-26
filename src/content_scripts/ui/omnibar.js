@@ -673,7 +673,8 @@ function createOmnibar(front, clipboard) {
         } else {
             url = self.input.value;
             if (!self.isUrl(url)) {
-                url = searchEngine.aliases[runtime.conf.defaultSearchEngine].url + url;
+                const alias = searchEngine.defaultAlias();
+                url = alias ? searchEngine.aliases[alias].url + url : "";
             }
         }
         var type = "", uid;
@@ -1334,6 +1335,14 @@ function OpenVIMarks(omnibar) {
 function SearchEngine(omnibar, front) {
     var self = {};
     self.aliases = {};
+
+    // The engine for a query typed without an alias: the default one, or the first
+    // one left when the user has turned the default off (an alias unticked in the
+    // settings, or removeSearchAlias). null when there is none at all.
+    self.defaultAlias = function() {
+        const alias = runtime.conf.defaultSearchEngine;
+        return self.aliases.hasOwnProperty(alias) ? alias : (Object.keys(self.aliases)[0] || null);
+    };
 
     var _pendingRequest = undefined; // timeout ID
     function clearPendingRequest() {
