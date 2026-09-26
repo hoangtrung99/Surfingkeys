@@ -134,7 +134,7 @@ export default function createPalette(omnibar, front, searchEngine) {
     const ui = document.getElementById('sk_omnibar');
     const hint = ui.querySelector('#sk_omnibarSearchArea .resultPage');
     let tabs = null, current = null, pages = [], actionsMode = false;
-    let seq = 0, lastPointer = null, pendingEnter = null, pendingTab = false, early = null;
+    let seq = 0, lastPointer = null, pendingEnter = null, early = null;
     let suggestions = [], sugFor = '', sugSeq = 0, sugTimer = null;
 
     // Each acts on the tab that hosts the palette. RUNTIME copies RUNTIME.repeats
@@ -358,7 +358,6 @@ export default function createPalette(omnibar, front, searchEngine) {
         omnibar.promptSpan.classList.remove('sk_palette_chip');
         hint.textContent = '';
         tabs = current = lastPointer = pendingEnter = null;
-        pendingTab = false;
         pages = [];
         suggestions = [];
         sugFor = '';
@@ -408,11 +407,6 @@ export default function createPalette(omnibar, front, searchEngine) {
             bang && searchEngine.aliases.hasOwnProperty(bang[1])
                 ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(searchEngine.defaultAlias(), query);
         }
-        if (pendingTab) {  // Tab was typed ahead, before the tab list arrived
-            pendingTab = false;
-            self.onTab();
-            return;
-        }
         if (pendingEnter) {  // Enter was pressed before the tab list arrived
             const keys = pendingEnter;
             pendingEnter = null;
@@ -421,9 +415,10 @@ export default function createPalette(omnibar, front, searchEngine) {
     }
     self.onInput = () => update(false);
 
-    // Tab on an empty input lists the actions, as in Arc.
+    // Tab on an empty input lists the actions, as in Arc; they need no tab list,
+    // so a Tab that beats it switches at once and what is typed next filters them.
     self.onTab = function() {
-        if (!actionsMode && tabs && omnibar.input.value === '') {
+        if (!actionsMode && omnibar.input.value === '') {
             setMode(true);
             return true;
         }
@@ -505,7 +500,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         } else if (message.then === 'Escape') {
             front.hidePopup();
         } else if (message.then === 'Tab') {
-            tabs ? self.onTab() : (pendingTab = true);
+            self.onTab();
         }
     }
     // Over chrome.runtime from the top frame, never postMessage: an Enter here picks
