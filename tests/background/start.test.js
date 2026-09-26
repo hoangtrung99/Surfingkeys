@@ -2661,7 +2661,7 @@ describe('start', () => {
     describe('user script registration', () => {
         const snippetCode = (snippets) =>
             `import('./api.js').then((module) => {module.default("chrome-extension://surfingkeys/", ` +
-            `(api, settings) => {${snippets}\n})});`;
+            `${JSON.stringify(snippets)})});`;
 
         it('skips registration entirely when the API is unavailable', async () => {
             mockFetchText('snippets');

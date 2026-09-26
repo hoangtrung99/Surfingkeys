@@ -139,7 +139,7 @@ function applySettings(api, normal, rs) {
         } catch (e) {
             error = e.toString();
         }
-        applyUserSettings({settings, error});
+        applyUserSettings({settings, error, snippets: rs.snippets});
     }
 
     applyRuntimeConf(normal);
