@@ -19,8 +19,10 @@
 // is mostly a preview). shell.js documents ctx.
 import appearance from './appearance.js';
 import keys from './keys.js';
+import search from './search.js';
 import sites from './sites.js';
 import advanced from './advanced.js';
+import proxy from './proxy.js';
 import backup from './backup.js';
 
-export default [appearance, keys, sites, advanced, backup];
+export default [appearance, keys, search, sites, advanced, proxy, backup];
