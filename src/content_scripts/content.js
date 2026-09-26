@@ -222,7 +222,9 @@ function start(browser) {
     };
     if (window === top) {
         new Promise((r, j) => {
-            if (window.location.href === chrome.runtime.getURL("/pages/options.html")) {
+            // The settings page is matched without its query and fragment: a deep link
+            // (options.html#keys) must boot the page too, or it renders empty.
+            if (window.location.href.replace(/[?#].*$/, '') === chrome.runtime.getURL("/pages/options.html")) {
                 import(/* webpackIgnore: true */ './pages/options.js').then((optionsLib) => {
                     optionsLib.default(
                         RUNTIME,
