@@ -2,6 +2,36 @@
 
 [![Node CI](https://github.com/brookhong/Surfingkeys/workflows/Node%20CI/badge.svg?branch=master)](https://github.com/brookhong/Surfingkeys/actions?query=workflow%3A%22Node+CI%22+branch%3Amaster)
 
+## About this fork
+
+This fork adds a command palette, a visual tab switcher and 10 built-in color themes. Everything else is upstream Surfingkeys.
+
+**Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
+
+### Command palette — <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>
+
+One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, change theme…).
+
+| Search | Actions (<kbd>Tab</kbd>) |
+|:--:|:--:|
+| ![Command palette](docs/images/palette-search.png) | ![Palette actions](docs/images/palette-actions.png) |
+
+### Visual tab switcher — <kbd>Alt</kbd>+<kbd>Q</kbd>
+
+Hold <kbd>Alt</kbd>, press <kbd>Q</kbd> to move through tabs in most-recently-used order (with <kbd>Shift</kbd> to go back), release <kbd>Alt</kbd> to switch. A quick tap jumps to the previous tab.
+
+![Visual tab switcher](docs/images/tab-switcher.png)
+
+### Built-in themes — <kbd>;T</kbd>
+
+Catppuccin Mocha & Latte, Tokyo Night, Rosé Pine & Dawn, Nord, Dracula, Gruvbox, Everforest and GitHub Light. They style every Surfingkeys UI (omnibar, hints, editor, popups) and need no settings snippet or user scripts.
+
+![Theme menu](docs/images/theme-menu.png)
+
+Both shortcuts can be changed at `chrome://extensions/shortcuts`. If another extension already holds them, the same keys still work inside web pages.
+
+## Surfingkeys
+
 Surfingkeys is a browser extension (for Google Chrome, Chromium-based browsers, Firefox, and Safari) that provides keyboard-based navigation and control of the web in the spirit of the VIM editor. But it's not just for VIM users; it's for anyone who needs more shortcuts for their own functions.
 
 Surfingkeys is created with all settings described in JavaScript, so it's easy for anyone to map any keystrokes to their own defined JavaScript functions. For example,
