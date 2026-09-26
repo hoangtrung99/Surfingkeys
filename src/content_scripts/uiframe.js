@@ -1,4 +1,5 @@
 import { LOG } from '../common/utils.js';
+import Mode from './common/mode.js';
 import { runtime } from './common/runtime.js';
 import {
     getBrowserName,
@@ -144,6 +145,27 @@ function createUiHost(browser, onload) {
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
 
+    // Reloading or updating the extension kills the frontend but leaves this page as
+    // it was: a panel open then stays a dead frame over the whole page that takes
+    // every click until the page is reloaded (Mode.isOrphaned gives the keys back,
+    // not the mouse). Watched only while a panel is open.
+    var orphanWatch = null;
+    function watchOrphan(on) {
+        clearInterval(orphanWatch);
+        orphanWatch = on ? setInterval(function() {
+            if (Mode.isOrphaned()) {
+                clearInterval(orphanWatch);
+                window.removeEventListener('message', _onWindowMessage, true);
+                document.removeEventListener("fullscreenchange", onFullscreenChange);
+                uiHost.remove();
+                if (document.body) {
+                    document.body.style.animationFillMode = "";
+                    document.body.style.overflowY = _origOverflowY;
+                }
+            }
+        }, 500) : null;
+    }
+
     _actions['initFrontendAck'] = function(response) {
         onload(uiHost);
     };
@@ -154,6 +176,7 @@ function createUiHost(browser, onload) {
         }
         if (response.pointerEvents === "none") {
             lower();
+            watchOrphan(false);
             uiHost.blur();
             ifr.blur();
             // test with https://docs.google.com/ and https://web.whatsapp.com/
@@ -172,6 +195,7 @@ function createUiHost(browser, onload) {
             }
         } else {
             raise();
+            watchOrphan(true);
             if (browser.focusFrontend) {
                 browser.focusFrontend(ifr);
             }
@@ -200,6 +224,7 @@ function createUiHost(browser, onload) {
             }});
             window.removeEventListener('message', _onWindowMessage, true);
             document.removeEventListener("fullscreenchange", onFullscreenChange);
+            watchOrphan(false);
             uiHost.remove();
         } else {
             LOG("warn", "frontend in use");
