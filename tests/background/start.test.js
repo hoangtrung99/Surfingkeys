@@ -648,6 +648,60 @@ describe('start', () => {
             }));
         });
 
+        describe('a site named by the popup', () => {
+            const popup = {origin: 'chrome-extension://surfingkeys', url: 'chrome-extension://surfingkeys/pages/popup.html'};
+
+            it('turns Surfingkeys off on that site alone', () => {
+                const {dispatch, stored} = bootstrap({browser: {settings: {blocklist: {}}}});
+                const {sendResponse} = dispatch({action: 'toggleBlocklist', needResponse: true, origin: 'https://github.com'}, popup);
+                expect(sendResponse).toHaveBeenCalledWith({
+                    state: 'disabled',
+                    blocklist: {'https://github.com': 1},
+                    url: 'https://github.com',
+                });
+                expect(stored()).toMatchObject({blocklist: {'https://github.com': 1}});
+            });
+
+            it('turns it back on, leaving the other sites and the global switch alone', () => {
+                const {dispatch} = bootstrap({
+                    browser: {settings: {blocklist: {'https://github.com': 1, 'https://a.example': 1}}},
+                });
+                const {sendResponse} = dispatch({action: 'toggleBlocklist', needResponse: true, origin: 'https://github.com'}, popup);
+                expect(sendResponse).toHaveBeenCalledWith({
+                    state: 'enabled',
+                    blocklist: {'https://a.example': 1},
+                    url: 'https://github.com',
+                });
+            });
+
+            it('reports the site as off while Surfingkeys is off everywhere', () => {
+                const {dispatch} = bootstrap({browser: {settings: {blocklist: {'.*': 1, 'https://github.com': 1}}}});
+                const {sendResponse} = dispatch({action: 'toggleBlocklist', needResponse: true, origin: 'https://github.com'}, popup);
+                expect(sendResponse).toHaveBeenCalledWith({state: 'disabled', blocklist: {'.*': 1}, url: 'https://github.com'});
+            });
+
+            it.each([
+                ['a page address', 'https://github.com/brookhong'],
+                ['a browser page', 'chrome://extensions'],
+                ['a script url', 'javascript:alert(1)'],
+                ['no url at all', 'github.com'],
+                ['an empty name', ''],
+            ])('changes nothing for %s', (what, origin) => {
+                const {dispatch, stored, broadcasts} = bootstrap({browser: {settings: {blocklist: {}}}});
+                const {sendResponse} = dispatch({action: 'toggleBlocklist', needResponse: true, origin}, popup);
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Not a web origin'), blocklist: {}});
+                expect(stored()).not.toHaveProperty('blocklist');
+                expect(broadcasts()).toHaveLength(0);
+            });
+
+            it('is not taken from a page: its content script toggles its own site', () => {
+                const {dispatch, stored} = bootstrap({browser: {settings: {blocklist: {}}}});
+                const {sendResponse} = dispatch({action: 'toggleBlocklist', needResponse: true, origin: 'https://github.com'}, senderFor(12));
+                expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({url: 'https://b.example'}));
+                expect(stored().blocklist).toEqual({'https://b.example': 1});
+            });
+        });
+
         it('persists and broadcasts the updated blocklist', () => {
             const {dispatch, stored, broadcasts} = bootstrap({browser: {settings: {blocklist: {}}}});
             dispatch({action: 'toggleBlocklist', needResponse: true}, senderFor(12));
