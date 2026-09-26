@@ -1,7 +1,7 @@
 import Trie from '../common/trie';
 import KeyboardUtils from '../common/keyboardUtils';
 import Mode from '../common/mode';
-import { debounce } from 'lodash';
+import debounce from 'lodash/debounce';
 import {
     filterByTitleOrUrl,
     regexFromString,
