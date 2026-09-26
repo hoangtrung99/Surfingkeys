@@ -107,6 +107,13 @@ const userConfPromise = new Promise(function (resolve, reject) {
     }, {once: true});
 });
 
+// Under MV3 the snippet runs as a user script (registerUserScript in the background)
+// and this world forbids eval: running it here too would put an EvalError in every
+// open tab at each Save, since a settingsUpdated broadcast carries no isMV3.
+function snippetsRunHere() {
+    return chrome.runtime.getManifest().manifest_version < 3;
+}
+
 function applySettings(api, normal, rs) {
     for (var k in rs) {
         if (runtime.conf.hasOwnProperty(k)) {
@@ -125,7 +132,7 @@ function applySettings(api, normal, rs) {
                 api.removeSearchAlias(key);
             }
         }
-    } else if (!rs.isMV3 && rs.snippets && !document.location.href.startsWith(chrome.runtime.getURL("/"))) {
+    } else if (rs.snippets && snippetsRunHere() && !document.location.href.startsWith(chrome.runtime.getURL("/"))) {
         var settings = {}, error = "";
         try {
             (new Function('settings', 'api', rs.snippets))(settings, api);
