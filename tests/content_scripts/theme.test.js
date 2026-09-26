@@ -1,7 +1,8 @@
 import installTheme from '../../src/content_scripts/theme.js';
 import createThemeMenu from '../../src/content_scripts/ui/themeMenu.js';
-import { DEFAULT_THEME, NO_THEME, PALETTES, THEME_IDS, THEME_KEY, resolveTheme } from '../../src/content_scripts/common/themes.js';
-import { pageStyles, themeCss } from '../../src/content_scripts/common/themeCss.js';
+import { DEFAULT_THEME, NO_THEME, PALETTES, THEME_IDS, THEME_KEY, resolveTheme, themeEntries } from '../../src/content_scripts/common/themes.js';
+import { aceCss, pageStyles, themeCss, themeTokens } from '../../src/content_scripts/common/themeCss.js';
+const { createHash } = require('crypto');
 
 const mockRUNTIME = jest.fn();
 const mockShowBanner = jest.fn();
@@ -68,6 +69,79 @@ describe('themeCss', () => {
         expect(page.hints).toContain(`color: ${P.hintFg}; background: ${P.hintBg};`);
         expect(page.textHints).toContain(`color: ${P.textHintFg}; background: ${P.textHintBg};`);
         expect(page.cursor).toContain(P.accent);
+    });
+});
+
+describe('themeTokens and aceCss', () => {
+    // sha256 of themeCss(PALETTES[id]) before the token block and the Ace rules
+    // became functions of their own: the frontend stylesheet must not change by a byte.
+    const BEFORE = {
+        mocha: 'd5d6c1d27177f76b6985d51c852d5c9ec2b9d2f568b6349171dfa2e9dd4ada45',
+        tokyonight: '604961550022af6d3ef81048b3cfe75856b3f647637ebab27d1110a5d4b897b2',
+        rosepine: 'ab7d349e2b1b40745b70210136f5688c5d6273badedc5aece6dfb9524d70305f',
+        nord: 'a9c8b9f8015668e045be5f4d9921655376d405e027fe142b4708d25d23d6e476',
+        dracula: '93dfdd59bcf734939ff0c05c3030c79fc7b5178c5e1fce0ab7d559781b3728f9',
+        gruvbox: '8ea66919eb0f4ec3289e52e7ae97d07c14a9b705ea70b3c8c4687de9db016d52',
+        everforest: 'c78fdb1c00c50b4b1a80020cfb96e05a691f931beb9d219b71dc951d64a6b710',
+        latte: '82b273294cadee4c514afe8c38b634b5d181f094b775679234038637a9c28669',
+        github: '1df176944d977263a8429f3d31d442320d8ca84bf6716e96433da77ab4d2ddab',
+        dawn: '33bf5b47664fef4a01cbc2c62761a09a999478d1f0fc74d0f20011a55ac4a8d2',
+    };
+
+    test('every theme has a recorded stylesheet', () => {
+        expect(Object.keys(BEFORE)).toEqual(THEME_IDS);
+    });
+
+    test.each(THEME_IDS)('%s: themeCss is byte-identical to before', (id) => {
+        expect(createHash('sha256').update(themeCss(PALETTES[id])).digest('hex')).toBe(BEFORE[id]);
+    });
+
+    test.each(THEME_IDS)('%s: themeCss holds the token block and the editor rules verbatim', (id) => {
+        const css = themeCss(PALETTES[id]);
+        expect(css.startsWith(`\n${themeTokens(PALETTES[id])}\nbody {`)).toBe(true);
+        expect(css).toContain(`\n\n${aceCss('#sk_editor')}\n\n`);
+    });
+
+    test('declares the tokens on another selector when asked', () => {
+        const P = PALETTES.nord;
+        const scoped = themeTokens(P, '.card[data-theme="nord"]');
+        expect(scoped.startsWith('.card[data-theme="nord"] {\n  --bg: #2e3440;')).toBe(true);
+        expect(scoped.slice(scoped.indexOf('{'))).toBe(themeTokens(P).slice(themeTokens(P).indexOf('{')));
+        expect(scoped).not.toContain('<');
+    });
+
+    test('re-tints an editor at any selector, the popup rules staying global', () => {
+        const css = aceCss('#mappings');
+        expect(css).not.toContain('#sk_editor');
+        expect(css).toContain('#mappings .ace_gutter { background: var(--mantle);');
+        expect(css).toContain('#mappings.normal-mode .ace_cursor');
+        expect(css).toContain('.ace_editor.ace_autocomplete { background: var(--bg);');
+        expect(css).not.toContain('<');
+    });
+});
+
+describe('themeEntries', () => {
+    test('lists every theme in menu order, then Surfingkeys itself', () => {
+        const entries = themeEntries();
+        expect(entries.map((e) => e.id)).toEqual([...THEME_IDS, NO_THEME]);
+        expect(entries.map((e) => e.name)).toEqual([...THEME_IDS.map((id) => PALETTES[id].name), 'Surfingkeys']);
+    });
+
+    test('carries the swatch the theme menu has always drawn', () => {
+        const nord = themeEntries().find((e) => e.id === 'nord');
+        expect(nord).toEqual({id: 'nord', name: 'Nord', bg: '#2e3440', dots: ['#eceff4', '#88c0d0', '#b48ead'],
+            light: false, also: 'nord dark'});
+        const github = themeEntries().find((e) => e.id === 'github');
+        expect(github.bg).toBe('#ffffff');
+        expect(github.light).toBe(true);
+        const none = themeEntries().find((e) => e.id === NO_THEME);
+        expect(none).toEqual({id: NO_THEME, name: 'Surfingkeys', bg: '#ffffff', dots: ['#000000', '#b90c0c', '#4b3acc'],
+            light: true, also: 'original none off light'});
+    });
+
+    test('hands out a fresh list each time', () => {
+        themeEntries()[0].name = 'changed';
+        expect(themeEntries()[0].name).toBe(PALETTES[THEME_IDS[0]].name);
     });
 });
 
