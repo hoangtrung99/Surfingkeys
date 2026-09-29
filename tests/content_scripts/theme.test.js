@@ -481,7 +481,8 @@ describe('theme menu', () => {
         type('system');
         expect(names()).toEqual(['Auto (Catppuccin Mocha / Catppuccin Latte)']);
         menu.onEnter();
-        expect(front.contentCommand).toHaveBeenLastCalledWith({action: 'pickTheme', name: AUTO_THEME});
+        expect(mockRUNTIME).toHaveBeenLastCalledWith('frontendRequest', {request: 'pickTheme', name: AUTO_THEME});
+        expect(front.contentCommand).not.toHaveBeenCalled();
     });
 
     test(':theme picks by name, or opens the menu', () => {

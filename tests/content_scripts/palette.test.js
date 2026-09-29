@@ -500,14 +500,14 @@ describe('actions', () => {
         await f.settle();
     }
 
-    test('Tab on an empty input lists the 26 actions under an Actions chip', async () => {
+    test('Tab on an empty input lists the 27 actions under an Actions chip', async () => {
         await openActions();
         expect(titles()).toEqual([
             'Copy URL', 'Copy URL as Markdown', 'Reload', 'Duplicate Tab', 'Pin / Unpin Tab',
             'Mute / Unmute Tab', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right',
             'Close Tabs to the Left', 'Reopen Closed Tab', 'Move Tab to New Window', 'Move Tab to Window…',
             'Gather All Windows', 'Zoom In', 'Zoom Out', 'Reset Zoom', 'View Source', 'Change Theme…',
-            'Settings…', 'Settings: Appearance', 'Settings: Keys', 'Settings: Sites',
+            'Auto Theme (Follow System Light / Dark)', 'Settings…', 'Settings: Appearance', 'Settings: Keys', 'Settings: Sites',
             'Disable / Enable Surfingkeys on This Site', 'Keyboard Shortcuts…', 'Show All Key Mappings',
         ]);
         expect(prompt().textContent).toBe('Actions');
@@ -527,7 +527,7 @@ describe('actions', () => {
     test('filters by name and by the extra words', async () => {
         await openActions();
         await type('dark');
-        expect(titles()).toEqual(['Change Theme…']);
+        expect(titles()).toEqual(['Change Theme…', 'Auto Theme (Follow System Light / Dark)']);
         await type('undo');
         expect(titles()).toEqual(['Reopen Closed Tab']);
     });
@@ -667,7 +667,7 @@ describe('keys typed in the page before the palette had focus', () => {
         f.held.find((h) => h.message.action === 'tabSwitcherTabs').respond({ tabs: TABS });
         await f.settle();
         expect(prompt().textContent).toBe('Actions');
-        expect(lis()).toHaveLength(26);
+        expect(lis()).toHaveLength(27);
     });
 
     test('posted by the page over window.postMessage, they do nothing', async () => {
