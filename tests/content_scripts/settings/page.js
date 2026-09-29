@@ -154,7 +154,8 @@ export function boot({hash = '', stored = {}, browser = 'Chrome', reply = {}} = 
 
 // what content.js hands the page once Surfingkeys has started on it
 export function loadSettings(settings) {
-    const normal = {passFocus: jest.fn(), mappings: {find: (k) => ({meta: {annotation: `#1Action ${k}`}})}};
+    // the Keys section lists the defaults from getMetas; no default mappings here
+    const normal = {passFocus: jest.fn(), mappings: {find: (k) => ({meta: {annotation: `#1Action ${k}`}}), getMetas: () => []}};
     document.dispatchEvent(new CustomEvent('surfingkeys:defaultSettingsLoaded', {detail: {normal, api: {}}}));
     const frontCommand = jest.fn((msg, cb) => cb({aliases: {g: {prompt: 'google'}}}));
     document.dispatchEvent(new CustomEvent('surfingkeys:userSettingsLoaded', {detail: {settings, frontCommand}}));

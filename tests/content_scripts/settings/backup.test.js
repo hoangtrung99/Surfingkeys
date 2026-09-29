@@ -132,7 +132,8 @@ describe('import', () => {
         await settle();
         expect(document.getElementById('importDialog')).toBeNull();
         expect(writes(sent)).toEqual([]);
-        expect(sent.filter((m) => m.action === 'localData' && typeof m.args.data !== 'string')).toEqual([]);
+        // localData writes only with an object; the page reads the theme with a key array
+        expect(sent.filter((m) => m.action === 'localData' && m.args.data.constructor === Object)).toEqual([]);
     });
 
     test('stores the settings in one write, then the theme, then re-reads them', async () => {
@@ -193,7 +194,7 @@ describe('import', () => {
         await pick(JSON.stringify(FILE));
         await answer('importConfirm');
         expect(local.paletteTheme).toBe('nord');
-        expect(sent.filter((m) => m.action === 'localData' && typeof m.args.data !== 'string')).toEqual([]);
+        expect(sent.filter((m) => m.action === 'localData' && m.args.data.constructor === Object)).toEqual([]);
     });
 
     test('says an imported proxy applies at once, and applies it from what is stored', async () => {
