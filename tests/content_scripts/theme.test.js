@@ -1,6 +1,7 @@
 import installTheme from '../../src/content_scripts/theme.js';
 import createThemeMenu from '../../src/content_scripts/ui/themeMenu.js';
-import { DEFAULT_THEME, NO_THEME, PALETTES, THEME_IDS, THEME_KEY, resolveTheme, themeEntries } from '../../src/content_scripts/common/themes.js';
+import { AUTO_THEME, DEFAULT_PAIR, DEFAULT_THEME, NO_THEME, PAIR_KEY, PALETTES, THEME_IDS, THEME_KEY, autoEntry, autoName,
+    pickedTheme, resolveTheme, themeEntries, themeInUse, themePair } from '../../src/content_scripts/common/themes.js';
 import { aceCss, pageStyles, themeCss, themeTokens } from '../../src/content_scripts/common/themeCss.js';
 const { createHash } = require('crypto');
 
@@ -28,6 +29,31 @@ const FIELDS = ['name', 'bg', 'mantle', 'crust', 's0', 's1', 's2', 'overlay', 's
     'yellow', 'green', 'blue', 'mauve', 'peach', 'red', 'hintBg', 'hintFg', 'textHintBg', 'textHintFg',
     'shadow', 'dim', 'glass', 'light'];
 
+// window.matchMedia for '(prefers-color-scheme: dark)', which jsdom lacks; set()
+// flips the system setting and tells the listeners, as the browser does.
+function mockSystemScheme(dark) {
+    const listeners = [];
+    const state = {dark};
+    const mql = {
+        get matches() {
+            return state.dark;
+        },
+        addEventListener: (type, fn) => type === 'change' && listeners.push(fn),
+    };
+    window.matchMedia = jest.fn((query) => (query === '(prefers-color-scheme: dark)' ? mql : {matches: false, addEventListener() {}}));
+    return {
+        set(value) {
+            state.dark = value;
+            listeners.forEach((fn) => fn({matches: value}));
+        },
+        listeners,
+    };
+}
+
+afterEach(() => {
+    delete window.matchMedia;
+});
+
 describe('themes', () => {
     test.each(THEME_IDS)('%s defines every colour the styles use', (id) => {
         FIELDS.forEach((f) => expect(PALETTES[id]).toHaveProperty(f));
@@ -52,6 +78,57 @@ describe('themes', () => {
         [undefined, null],
     ])('resolveTheme(%p) is %p', (name, id) => {
         expect(resolveTheme(name)).toBe(id);
+    });
+});
+
+describe('Auto', () => {
+    test('is named auto, automatic or system', () => {
+        expect(resolveTheme('auto')).toBe(AUTO_THEME);
+        expect(resolveTheme('System')).toBe(AUTO_THEME);
+        expect(resolveTheme('automatic')).toBe(AUTO_THEME);
+    });
+
+    test('is no theme of its own, so a build without it draws the default', () => {
+        // theme.js before Auto: an id that is neither NO_THEME nor a palette is DEFAULT_THEME
+        expect(AUTO_THEME).not.toBe(NO_THEME);
+        expect(PALETTES.hasOwnProperty(AUTO_THEME)).toBe(false);
+        expect(PAIR_KEY).not.toBe(THEME_KEY);
+        expect(DEFAULT_PAIR).toEqual({dark: 'mocha', light: 'latte'});
+    });
+
+    test('keeps a dark theme on the dark side and a light one on the light side', () => {
+        expect(themePair(undefined)).toEqual(DEFAULT_PAIR);
+        expect(themePair({dark: 'nord', light: 'dawn'})).toEqual({dark: 'nord', light: 'dawn'});
+        expect(themePair({dark: 'github', light: 'dracula'})).toEqual(DEFAULT_PAIR);
+        expect(themePair({dark: 'solarized', light: NO_THEME})).toEqual(DEFAULT_PAIR);
+        expect(themePair({dark: 'constructor'})).toEqual(DEFAULT_PAIR);
+        expect(themePair('nord')).toEqual(DEFAULT_PAIR);
+    });
+
+    test('draws the side of the pair the system asks for', () => {
+        const pair = {dark: 'gruvbox', light: 'github'};
+        expect(themeInUse(AUTO_THEME, pair, true)).toBe('gruvbox');
+        expect(themeInUse(AUTO_THEME, pair, false)).toBe('github');
+        expect(themeInUse(AUTO_THEME, undefined, true)).toBe('mocha');
+        expect(themeInUse(AUTO_THEME, undefined, false)).toBe('latte');
+        expect(themeInUse('nord', pair, false)).toBe('nord');
+        expect(themeInUse(NO_THEME, pair, true)).toBe(NO_THEME);
+        expect(themeInUse('solarized', pair, false)).toBe(DEFAULT_THEME);
+    });
+
+    test('marks the pick, an unknown one being the default', () => {
+        expect([AUTO_THEME, NO_THEME, 'dawn', undefined, null, 'solarized'].map(pickedTheme))
+            .toEqual([AUTO_THEME, NO_THEME, 'dawn', DEFAULT_THEME, DEFAULT_THEME, DEFAULT_THEME]);
+    });
+
+    test('names and draws its row from the pair', () => {
+        expect(autoName({dark: 'nord', light: 'dawn'})).toBe('Auto (Nord / Rosé Pine Dawn)');
+        const entry = autoEntry({dark: 'nord', light: 'github'});
+        expect(entry.id).toBe(AUTO_THEME);
+        expect(entry.name).toBe('Auto (Nord / GitHub Light)');
+        expect(entry.bg).toBe(`linear-gradient(135deg, ${PALETTES.nord.bg} 50%, ${PALETTES.github.surface} 50%)`);
+        expect(entry.dots).toHaveLength(3);
+        expect(autoEntry(undefined).name).toBe('Auto (Catppuccin Mocha / Catppuccin Latte)');
     });
 });
 
@@ -156,8 +233,8 @@ describe('installTheme', () => {
         saved = {};
         mockRUNTIME.mockReset();
         mockRUNTIME.mockImplementation((action, args, callback) => {
-            if (action === 'localData' && typeof args.data === 'string') {
-                callback({data: {[args.data]: saved[args.data]}});
+            if (action === 'localData' && (typeof args.data === 'string' || Array.isArray(args.data))) {
+                callback({data: Object.fromEntries([].concat(args.data).map((k) => [k, saved[k]]))});
             }
         });
         mockShowBanner.mockReset();
@@ -173,26 +250,26 @@ describe('installTheme', () => {
         const page = pageStyles(PALETTES.nord);
         expect(hints.style.mock.calls).toEqual([[page.hints, undefined, true], [page.textHints, 'text', true]]);
         expect(visual.style.mock.calls).toEqual([['marks', page.marks, true], ['cursor', page.cursor, true]]);
-        expect(front.setBuiltinTheme).toHaveBeenCalledWith('nord', themeCss(PALETTES.nord));
+        expect(front.setBuiltinTheme).toHaveBeenCalledWith('nord', themeCss(PALETTES.nord), {picked: 'nord', pair: DEFAULT_PAIR});
     });
 
     test('uses the default theme until one is picked', () => {
         install();
-        expect(front.setBuiltinTheme).toHaveBeenCalledWith(DEFAULT_THEME, themeCss(PALETTES[DEFAULT_THEME]));
+        expect(front.setBuiltinTheme).toHaveBeenCalledWith(DEFAULT_THEME, themeCss(PALETTES[DEFAULT_THEME]), {picked: DEFAULT_THEME, pair: DEFAULT_PAIR});
     });
 
     test('gives Surfingkeys its own look back', () => {
         saved[THEME_KEY] = NO_THEME;
         install();
         expect(hints.style.mock.calls).toEqual([['', undefined, true], ['', 'text', true]]);
-        expect(front.setBuiltinTheme).toHaveBeenCalledWith(NO_THEME, '');
+        expect(front.setBuiltinTheme).toHaveBeenCalledWith(NO_THEME, '', {picked: NO_THEME, pair: DEFAULT_PAIR});
     });
 
     test('a pick is applied, kept and announced', () => {
         install();
         front.setBuiltinTheme.mockClear();
         front.pickTheme('Rosé Pine Dawn');
-        expect(front.setBuiltinTheme).toHaveBeenCalledWith('dawn', themeCss(PALETTES.dawn));
+        expect(front.setBuiltinTheme).toHaveBeenCalledWith('dawn', themeCss(PALETTES.dawn), {picked: 'dawn', pair: DEFAULT_PAIR});
         expect(mockRUNTIME).toHaveBeenCalledWith('localData', {data: {[THEME_KEY]: 'dawn'}});
         expect(mockShowBanner).toHaveBeenCalledWith('Theme: Rosé Pine Dawn');
     });
@@ -221,7 +298,98 @@ describe('installTheme', () => {
         theme.onSettingsUpdated({[THEME_KEY]: DEFAULT_THEME});
         expect(front.setBuiltinTheme).not.toHaveBeenCalled();
         theme.onSettingsUpdated({[THEME_KEY]: 'latte'});
-        expect(front.setBuiltinTheme).toHaveBeenCalledWith('latte', themeCss(PALETTES.latte));
+        expect(front.setBuiltinTheme).toHaveBeenCalledWith('latte', themeCss(PALETTES.latte), {picked: 'latte', pair: DEFAULT_PAIR});
+    });
+
+    describe('Auto', () => {
+        const drawn = () => front.setBuiltinTheme.mock.calls.map((c) => c[0]);
+
+        test('draws the dark side on a dark system and the light side on a light one', () => {
+            mockSystemScheme(true);
+            saved[THEME_KEY] = AUTO_THEME;
+            install();
+            expect(front.setBuiltinTheme).toHaveBeenLastCalledWith('mocha', themeCss(PALETTES.mocha), {picked: AUTO_THEME, pair: DEFAULT_PAIR});
+
+            front.setBuiltinTheme.mockClear();
+            mockSystemScheme(false);
+            install();
+            expect(front.setBuiltinTheme).toHaveBeenLastCalledWith('latte', themeCss(PALETTES.latte), {picked: AUTO_THEME, pair: DEFAULT_PAIR});
+        });
+
+        test('takes the stored pair', () => {
+            mockSystemScheme(false);
+            saved[THEME_KEY] = AUTO_THEME;
+            saved[PAIR_KEY] = {dark: 'dracula', light: 'dawn'};
+            install();
+            expect(drawn()).toEqual(['dawn']);
+            expect(mockRUNTIME.mock.calls[0].slice(0, 2)).toEqual(['localData', {data: [THEME_KEY, PAIR_KEY]}]);
+        });
+
+        test('follows the system as it changes, with no reload and no storage read', () => {
+            const system = mockSystemScheme(true);
+            saved[THEME_KEY] = AUTO_THEME;
+            install();
+            mockRUNTIME.mockClear();
+            front.setBuiltinTheme.mockClear();
+            hints.style.mockClear();
+
+            system.set(false);
+            expect(drawn()).toEqual(['latte']);
+            const page = pageStyles(PALETTES.latte);
+            expect(hints.style.mock.calls).toEqual([[page.hints, undefined, true], [page.textHints, 'text', true]]);
+            system.set(true);
+            expect(drawn()).toEqual(['latte', 'mocha']);
+            expect(mockRUNTIME).not.toHaveBeenCalled();
+        });
+
+        test('a theme picked by name ignores the system', () => {
+            const system = mockSystemScheme(true);
+            saved[THEME_KEY] = 'nord';
+            install();
+            front.setBuiltinTheme.mockClear();
+            system.set(false);
+            expect(front.setBuiltinTheme).not.toHaveBeenCalled();
+        });
+
+        test('picking Auto keeps "auto" and says what it draws from', () => {
+            mockSystemScheme(false);
+            install();
+            front.pickTheme('auto');
+            expect(mockRUNTIME).toHaveBeenCalledWith('localData', {data: {[THEME_KEY]: AUTO_THEME}});
+            expect(front.setBuiltinTheme).toHaveBeenLastCalledWith('latte', themeCss(PALETTES.latte), {picked: AUTO_THEME, pair: DEFAULT_PAIR});
+            expect(mockShowBanner).toHaveBeenCalledWith('Theme: Auto (Catppuccin Mocha / Catppuccin Latte)');
+        });
+
+        test('picking Auto on a dark system restyles nothing but still tells the menu', () => {
+            mockSystemScheme(true);
+            install();
+            hints.style.mockClear();
+            front.setBuiltinTheme.mockClear();
+            front.pickTheme('system');
+            expect(hints.style).not.toHaveBeenCalled();
+            expect(front.setBuiltinTheme).toHaveBeenCalledWith('mocha', themeCss(PALETTES.mocha), {picked: AUTO_THEME, pair: DEFAULT_PAIR});
+        });
+
+        test('follows a pair changed in another tab', () => {
+            mockSystemScheme(true);
+            saved[THEME_KEY] = AUTO_THEME;
+            const theme = install();
+            front.setBuiltinTheme.mockClear();
+            theme.onSettingsUpdated({[PAIR_KEY]: {dark: 'tokyonight', light: 'github'}});
+            expect(front.setBuiltinTheme).toHaveBeenLastCalledWith('tokyonight', themeCss(PALETTES.tokyonight),
+                {picked: AUTO_THEME, pair: {dark: 'tokyonight', light: 'github'}});
+        });
+
+        test('a reset drops both the pick and the pair', () => {
+            mockSystemScheme(false);
+            saved[THEME_KEY] = AUTO_THEME;
+            saved[PAIR_KEY] = {dark: 'nord', light: 'dawn'};
+            const theme = install();
+            front.setBuiltinTheme.mockClear();
+            theme.onSettingsUpdated({[THEME_KEY]: null, [PAIR_KEY]: null});
+            expect(front.setBuiltinTheme).toHaveBeenLastCalledWith(DEFAULT_THEME, themeCss(PALETTES[DEFAULT_THEME]),
+                {picked: DEFAULT_THEME, pair: DEFAULT_PAIR});
+        });
     });
 
     test(';T opens the theme menu', () => {
@@ -263,9 +431,10 @@ describe('theme menu', () => {
         menu = createThemeMenu(omnibar, front);
     });
 
-    test('lists every theme, then Surfingkeys itself', () => {
+    test('lists Auto, every theme, then Surfingkeys itself', () => {
         menu.onOpen();
-        expect(names()).toEqual(THEME_IDS.map((id) => PALETTES[id].name).concat('Surfingkeys'));
+        expect(names()).toEqual(['Auto (Catppuccin Mocha / Catppuccin Latte)']
+            .concat(THEME_IDS.map((id) => PALETTES[id].name), 'Surfingkeys'));
     });
 
     test('marks the theme in use and starts from it', () => {
@@ -296,6 +465,23 @@ describe('theme menu', () => {
         expect(front.hidePopup).toHaveBeenCalled();
         // a pick is stored: never over postMessage, which the page can post to as well
         expect(front.contentCommand).not.toHaveBeenCalled();
+    });
+
+    test('marks Auto in use, not the theme it draws, and names it by the pair', () => {
+        front._actions.applyBuiltinTheme({theme: 'latte', css: '', picked: AUTO_THEME, pair: {dark: 'nord', light: 'latte'}});
+        menu.onOpen();
+        const focused = rows().filter((li) => li.classList.contains('focused'));
+        expect(focused.map((li) => li.themeId)).toEqual([AUTO_THEME]);
+        expect(focused[0].querySelector('.sk_theme_name').textContent).toBe('Auto (Nord / Catppuccin Latte)');
+        expect(rows().filter((li) => li.querySelector('.sk_theme_current')).map((li) => li.themeId)).toEqual([AUTO_THEME]);
+    });
+
+    test('Auto is found by auto and system, and picked like any row', () => {
+        menu.onOpen();
+        type('system');
+        expect(names()).toEqual(['Auto (Catppuccin Mocha / Catppuccin Latte)']);
+        menu.onEnter();
+        expect(front.contentCommand).toHaveBeenLastCalledWith({action: 'pickTheme', name: AUTO_THEME});
     });
 
     test(':theme picks by name, or opens the menu', () => {

@@ -856,9 +856,9 @@ function start(browser) {
                     settings: data
                 });
             });
-            // paletteTheme is cleared too; saying so makes open tabs fall back to the
-            // default theme as new tabs do, instead of keeping the old one.
-            _broadcastSettings(Object.assign({}, data, {paletteTheme: null}));
+            // paletteTheme and paletteThemePair are cleared too; saying so makes open
+            // tabs fall back to the default theme as new tabs do, instead of keeping the old one.
+            _broadcastSettings(Object.assign({}, data, {paletteTheme: null, paletteThemePair: null}));
         });
     };
     self.loadSettingsFromUrl = function(message, sender, sendResponse) {
