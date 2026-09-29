@@ -3,6 +3,40 @@ import {
     setSanitizedContent,
 } from './common/utils.js';
 import { marked } from 'marked';
+import { pageTokens, watchTheme } from './common/quickControls.js';
+import createWelcome from './welcome.js';
+
+const screen1 = document.querySelector("#screen1");
+const screen2 = document.querySelector("#screen2");
+const welcome = createWelcome(document.getElementById('welcome'));
+let guideReady = false;
+
+// #welcome shows the welcome screen, anything else the guide: screen1, or the
+// full list in screen2, which the links in the guide switch between.
+function route() {
+    const onWelcome = location.hash === '#welcome';
+    welcome.show(onWelcome);
+    if (onWelcome) {
+        screen1.hide();
+        screen2.hide();
+    } else if (guideReady && screen1.style.display === 'none' && screen2.style.display === 'none') {
+        screen1.classList.remove("fadeOut");
+        screen1.show();
+        screen1.classList.add("fadeIn");
+    }
+}
+window.addEventListener('hashchange', route);
+route();
+
+// The page takes the colours of the theme in use, so a pick on the welcome
+// screen previews itself. It stays hidden until they are in, rather than
+// flashing Surfingkeys' white page before a dark theme.
+watchTheme((id) => {
+    document.getElementById('sk_page_tokens').textContent = pageTokens(id);
+    welcome.showTheme(id);
+    document.body.classList.add('sk_ready');
+});
+setTimeout(() => document.body.classList.add('sk_ready'), 300);
 
 RUNTIME("getTopSites", null, function(response) {
     var urls = response.urls.map(function(u) {
@@ -13,11 +47,8 @@ RUNTIME("getTopSites", null, function(response) {
     var source = document.getElementById('quickIntroSource').innerHTML;
     setSanitizedContent(document.querySelector('#quickIntro'), marked.parse(source));
 
-    var screen1 = document.querySelector("#screen1");
-    screen1.show();
-    screen1.classList.add("fadeIn");
-
-    var screen2 = document.querySelector("#screen2");
+    guideReady = true;
+    route();
 
     document.getElementById('back').onclick = function() {
         var cl = screen2.classList;
