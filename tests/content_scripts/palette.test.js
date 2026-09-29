@@ -267,6 +267,19 @@ describe('URL and search rows', () => {
         expect(markup.every((e) => e.localName === 'span' && e.className === 'omnibar_highlight')).toBe(true);
         expect(markup.map((e) => e.textContent.toLowerCase())).toEqual(markup.map(() => 't'));
     });
+
+    test('a highlighted piece of a title is shown as text too', async () => {
+        data.tabs = [CURRENT, tab(32, 'AT&T <b>x</b> news', 'https://att.test/')];
+        await open();
+        await type('&t <b>x');
+        const row = lis().find((li) => titleOf(li) === 'AT&T <b>x</b> news');
+        const spans = Array.from(row.querySelectorAll('.sk_palette_title > *'));
+        expect(spans.map((e) => [e.localName, e.className, e.textContent])).toEqual([
+            ['span', 'omnibar_highlight', '&T'],
+            ['span', 'omnibar_highlight', '<b>x'],
+        ]);
+        expect(spans.every((e) => e.children.length === 0)).toBe(true);
+    });
 });
 
 describe('search suggestions', () => {
