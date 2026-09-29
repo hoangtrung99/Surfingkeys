@@ -1,4 +1,3 @@
-import DOMPurify from "dompurify";
 import KeyboardUtils from './keyboardUtils';
 import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import { snippetsRevision } from '../../common/utils.js';
@@ -975,8 +974,17 @@ function filterInvisibleElements(nodes) {
     });
 }
 
+// DOMPurify builds its allow-lists as soon as its module runs, and content.js runs in
+// every frame at document_start. Required on first use, that cost is paid only by the
+// frames that draw something; a static import would put it back into every frame.
+let purify = null;
 function setSanitizedContent(elm, str) {
-    elm.innerHTML = DOMPurify.sanitize(str);
+    if (!purify) {
+        // require() takes the package's CommonJS build, whose exports are the instance
+        const m = require("dompurify");
+        purify = m.default || m;
+    }
+    elm.innerHTML = purify.sanitize(str);
 }
 
 function createElementWithContent(tag, content, attributes) {

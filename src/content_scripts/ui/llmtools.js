@@ -100,7 +100,7 @@ const MAX_TITLE_LENGTH = 40;
 
 // How long to give the browser to make a requested tab visible to `chrome.tabs.query`
 // before reporting back what could be seen of it.
-const OPEN_SETTLE_MS = 400;
+export const OPEN_SETTLE_MS = 400;
 
 // Hosts the page's own JavaScript could never reach, so a request to one of them
 // never originates from a legitimate reading of the current page. A heuristic for
