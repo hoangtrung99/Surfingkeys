@@ -69,7 +69,7 @@ export function createShortcutsCard(ctx) {
     const details = h('details', {class: 'sk-help sk-row', dataset: {filter: 'more browser shortcuts'}},
         h('summary', null, 'More browser shortcuts'), more);
     const paletteNote = h('p', {class: 'sk-muted', id: 'browserShortcutsPaletteNote', hidden: true},
-        'Until the command palette has a shortcut, it opens only on web pages where Surfingkeys runs, with Ctrl+Shift+P, and not on browser pages or the new tab page.');
+        'Until the command palette has a shortcut, it opens only on web pages where Surfingkeys runs, with Ctrl+Shift+P (Cmd+Shift+P too on a Mac), and not on browser pages or the new tab page.');
     const status = h('p', {class: 'sk-muted'});
     const change = h('button', {type: 'button', class: 'sk-btn', id: 'browserShortcutsChange'}, 'Change in browser');
     change.addEventListener('click', () => {
