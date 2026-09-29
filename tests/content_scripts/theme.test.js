@@ -454,6 +454,14 @@ describe('theme menu', () => {
         expect(names()).toEqual(['Catppuccin Latte', 'GitHub Light', 'Rosé Pine Dawn', 'Surfingkeys']);
     });
 
+    test('a theme name finds that theme, not Auto, whose name shows its pair', () => {
+        menu.onOpen();
+        type('latte');
+        expect(names()).toEqual(['Catppuccin Latte']);
+        menu.onEnter();
+        expect(mockRUNTIME).toHaveBeenLastCalledWith('frontendRequest', {request: 'pickTheme', name: 'latte'});
+    });
+
     test('Enter and a click pick the row', () => {
         menu.onOpen();
         type('gruv');

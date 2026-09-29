@@ -5,13 +5,19 @@
 // keeps the pick and sends the stylesheet this frame shows (applyBuiltinTheme).
 import { RUNTIME } from '../common/runtime.js';
 import { createElementWithContent, htmlEncode, setSanitizedContent } from '../common/utils.js';
-import { autoEntry, themeEntries } from '../common/themes.js';
+import { AUTO_THEME, autoEntry, themeEntries } from '../common/themes.js';
 
 const ENTRIES = themeEntries();
 
 // "rose" finds "Rosé Pine"
 function fold(s) {
     return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+// Auto is found by its own words, not by the pair its name shows: typing "latte"
+// would otherwise list Auto first, and Enter would pick Auto instead of Latte.
+function searchText(e) {
+    return fold(e.id === AUTO_THEME ? `Auto ${e.also}` : `${e.name} ${e.also}`);
 }
 
 export default function createThemeMenu(omnibar, front) {
@@ -47,7 +53,7 @@ export default function createThemeMenu(omnibar, front) {
 
     function update() {
         const terms = fold(omnibar.input.value).split(/\s+/).filter((t) => t.length);
-        const entries = [autoEntry(pair)].concat(ENTRIES).filter((e) => terms.every((t) => fold(`${e.name} ${e.also}`).includes(t)));
+        const entries = [autoEntry(pair)].concat(ENTRIES).filter((e) => terms.every((t) => searchText(e).includes(t)));
         omnibar.listResults(entries, render);
         const lis = Array.from(omnibar.resultsDiv.querySelectorAll('li'));
         lis.forEach((li) => {
