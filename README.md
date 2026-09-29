@@ -4,13 +4,13 @@
 
 ## About this fork
 
-This fork adds a command palette, a visual tab switcher and 10 built-in color themes. Everything else is upstream Surfingkeys.
+This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page and a quick-controls popup. Everything else is upstream Surfingkeys.
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
-### Command palette — <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>
+### Command palette — <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (macOS) / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> (Windows, Linux)
 
-One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, change theme…).
+One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, change theme, open a settings section, disable Surfingkeys on this site, show all keys…). Inside web pages <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> opens it on every platform; the browser-level default on Windows and Linux is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> because Chrome keeps <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for itself there.
 
 | Search | Actions (<kbd>Tab</kbd>) |
 |:--:|:--:|
@@ -24,11 +24,24 @@ Hold <kbd>Alt</kbd>, press <kbd>Q</kbd> to move through tabs in most-recently-us
 
 ### Built-in themes — <kbd>;T</kbd>
 
-Catppuccin Mocha & Latte, Tokyo Night, Rosé Pine & Dawn, Nord, Dracula, Gruvbox, Everforest and GitHub Light. They style every Surfingkeys UI (omnibar, hints, editor, popups) and need no settings snippet or user scripts.
+Catppuccin Mocha & Latte, Tokyo Night, Rosé Pine & Dawn, Nord, Dracula, Gruvbox, Everforest and GitHub Light. They style every Surfingkeys UI (omnibar, hints, editor, popups) and need no settings snippet or user scripts. **Auto** follows the system's light/dark mode live, with a dark and a light theme you choose in Settings → Appearance.
 
 ![Theme menu](docs/images/theme-menu.png)
 
-Both shortcuts can be changed at `chrome://extensions/shortcuts`. If another extension already holds them, the same keys still work inside web pages.
+Both shortcuts can be changed at `chrome://extensions/shortcuts`. If another extension already holds them, the same keys still work inside web pages, and the welcome page (opened on install) and Settings → Keys show which shortcuts are unassigned.
+
+### Settings page
+
+Open it with <kbd>;e</kbd>, from the palette or from the toolbar popup. Sections, each with its own link (`options.html#keys` and so on):
+
+- **Appearance:** theme cards with live previews, Auto light/dark pair.
+- **Keys:** every mapping, searchable, with change / disable / reset per key and conflict hints, plus the browser shortcuts and whether they are assigned.
+- **Search engines**, **Sites** (where Surfingkeys is disabled), **Proxy**.
+- **Advanced:** the settings snippet editor with lint, unsaved-change guard and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd>.
+- **Backup:** export settings to a file and import them with a preview.
+- **Reset & About:** a reset that lists exactly what it clears.
+
+The page follows the picked theme and works with the keyboard alone. The toolbar popup turns Surfingkeys off or on for the current site and switches themes.
 
 ## Surfingkeys
 
