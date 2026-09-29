@@ -4,6 +4,11 @@
 // to the previous tab. Typing: matching tabs, then history and bookmark pages,
 // then "Open URL" when the input looks like one, then a web search, then the
 // search engine's suggestions. Tab on an empty input lists actions instead.
+//
+// Nothing here that acts is reachable over window.postMessage, which the page can
+// post to like any content script: typed-ahead keys come over chrome.runtime, and
+// actions that belong to the page (a blocklist toggle, its key mappings) go to it
+// the same way (frontendRequest).
 import { RUNTIME, runtime } from '../common/runtime.js';
 import {
     attachFaviconToImgSrc,
@@ -18,6 +23,7 @@ const MAX_TABS = 5;
 const MAX_PAGES = 3;
 const MAX_SUGGESTIONS = 3;
 const HISTORY_SNAPSHOT = 1000;  // filtered locally on every keystroke, no round trip
+const EARLY_TYPE_AHEAD_MS = 1000;
 
 function hostOf(url) {
     try {
@@ -130,7 +136,7 @@ export default function createPalette(omnibar, front, searchEngine) {
     const ui = document.getElementById('sk_omnibar');
     const hint = ui.querySelector('#sk_omnibarSearchArea .resultPage');
     let tabs = null, current = null, pages = [], actionsMode = false;
-    let seq = 0, lastPointer = null, pendingEnter = null, pendingTab = false;
+    let seq = 0, lastPointer = null, pendingEnter = null, early = null;
     let suggestions = [], sugFor = '', sugSeq = 0, sugTimer = null;
 
     // Each acts on the tab that hosts the palette. RUNTIME copies RUNTIME.repeats
@@ -162,16 +168,28 @@ export default function createPalette(omnibar, front, searchEngine) {
         {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},
         {name: 'View Source', keys: 'gs', run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
         {name: 'Change Theme…', keys: ';T', also: 'color colour scheme appearance dark light', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Themes'}), 100)},
+        {name: 'Settings…', keys: ';e', also: 'options preferences', run: () => openSettings('')},
+        {name: 'Settings: Appearance', also: 'options preferences', run: () => openSettings('appearance')},
+        {name: 'Settings: Keys', also: 'options preferences remap', run: () => openSettings('keys')},
+        {name: 'Settings: Sites', also: 'options preferences blocklist', run: () => openSettings('sites')},
+        // the page's own frame toggles it: from this frame it would turn Surfingkeys off everywhere
+        {name: 'Disable / Enable Surfingkeys on This Site', keys: 'Alt-s', also: 'turn off on toggle blocklist', run: () => RUNTIME('frontendRequest', {request: 'toggleBlocklist'})},
+        {name: 'Keyboard Shortcuts…', also: 'browser commands hotkeys', run: () => RUNTIME('openLink', {tab: {tabbed: true, active: true}, url: 'chrome://extensions/shortcuts'})},
+        // the page lists them: it holds the user's own mappings
+        {name: 'Show All Key Mappings', keys: '?', also: 'help usage', run: () => RUNTIME('frontendRequest', {request: 'showUsage'})},
     ].map((a) => prep(Object.assign({kind: 'action', key: a.name}, a), a.name + ' ' + (a.also || ''), ''));
+
+    // the settings page opens on the section named in its hash
+    function openSettings(section) {
+        RUNTIME('openLink', {tab: {tabbed: true, active: true}, url: '/pages/options.html' + (section && '#' + section)});
+    }
 
     function urlOf(item) {
         if (item.kind === 'tab' || item.kind === 'page' || item.kind === 'url') {
             return item.url;
         }
-        if (item.kind === 'search' || item.kind === 'suggestion') {
-            return constructSearchURL(searchEngine.aliases[item.alias].url, encodeURIComponent(item.query));
-        }
-        return '';
+        const engine = (item.kind === 'search' || item.kind === 'suggestion') && searchEngine.aliases[item.alias];
+        return engine ? constructSearchURL(engine.url, encodeURIComponent(item.query)) : '';
     }
 
     function buildItems(query) {
@@ -201,7 +219,10 @@ export default function createPalette(omnibar, front, searchEngine) {
             const url = /^[a-z][\w+.-]*:(?!\d)/i.test(query) ? query : 'https://' + query;
             items.push({kind: 'url', key: 'url', url});
         }
-        const alias = runtime.conf.defaultSearchEngine;
+        const alias = searchEngine.defaultAlias();
+        if (!alias) {
+            return items;
+        }
         items.push({kind: 'search', key: 'search', alias, query});
         return items.concat(suggestionItems(alias, query));
     }
@@ -290,7 +311,7 @@ export default function createPalette(omnibar, front, searchEngine) {
             RUNTIME('focusTab', {windowId: item.tab.windowId, tabId: item.tab.id});
         } else if (item.kind === 'action') {
             item.run();
-        } else {
+        } else if (urlOf(item)) {
             RUNTIME('openLink', {tab: how || {tabbed: true, active: true}, url: urlOf(item)});
         }
     }
@@ -353,7 +374,6 @@ export default function createPalette(omnibar, front, searchEngine) {
         omnibar.promptSpan.classList.remove('sk_palette_chip');
         hint.textContent = '';
         tabs = current = lastPointer = pendingEnter = null;
-        pendingTab = false;
         pages = [];
         suggestions = [];
         sugFor = '';
@@ -401,12 +421,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         if (!keepFocus && !actionsMode && query) {
             const bang = query.match(/^!(\S+)\s+(.+)$/);
             bang && searchEngine.aliases.hasOwnProperty(bang[1])
-                ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(runtime.conf.defaultSearchEngine, query);
-        }
-        if (pendingTab) {  // Tab was typed ahead, before the tab list arrived
-            pendingTab = false;
-            self.onTab();
-            return;
+                ? fetchSuggestions(bang[1], bang[2]) : fetchSuggestions(searchEngine.defaultAlias(), query);
         }
         if (pendingEnter) {  // Enter was pressed before the tab list arrived
             const keys = pendingEnter;
@@ -416,9 +431,10 @@ export default function createPalette(omnibar, front, searchEngine) {
     }
     self.onInput = () => update(false);
 
-    // Tab on an empty input lists the actions, as in Arc.
+    // Tab on an empty input lists the actions, as in Arc; they need no tab list,
+    // so a Tab that beats it switches at once and what is typed next filters them.
     self.onTab = function() {
-        if (!actionsMode && tabs && omnibar.input.value === '') {
+        if (!actionsMode && omnibar.input.value === '') {
             setMode(true);
             return true;
         }
@@ -477,36 +493,52 @@ export default function createPalette(omnibar, front, searchEngine) {
                 return true;
             }
         } else if (omnibar.input.value.trim() && !actionsMode) {
-            activate({kind: 'search', alias: runtime.conf.defaultSearchEngine, query: omnibar.input.value.trim()}, how);
+            activate({kind: 'search', alias: searchEngine.defaultAlias(), query: omnibar.input.value.trim()}, how);
         }
         return how.active;
     };
 
+    const isOpen = () => ui.style.display !== 'none' && ui.classList.contains('sk_palette');
+
     // Keys typed in the page before this input took focus (content_scripts/tabSwitcher.js).
     // They were all typed before anything that reached the input, but can arrive
     // after it, so they go in front.
-    front._actions['paletteTypeAhead'] = function(message) {
-        if (ui.style.display !== 'none' && ui.classList.contains('sk_palette') && typeof message.text === 'string') {
-            const input = omnibar.input;
-            input.value = message.text + input.value;
-            input.setSelectionRange(input.value.length, input.value.length);
-            omnibar.triggerInput();
-            if (message.then === 'Enter') {
-                self.onEnter.call({tabbed: !!(omnibar.tabbed ^ !!message.shift), activeTab: true}) && front.hidePopup();
-            } else if (message.then === 'Escape') {
-                front.hidePopup();
-            } else if (message.then === 'Tab') {
-                tabs ? self.onTab() : (pendingTab = true);
-            }
+    function typeAhead(message) {
+        if (typeof message.text !== 'string') {
+            return;
         }
-    };
+        const input = omnibar.input;
+        input.value = message.text + input.value;
+        input.setSelectionRange(input.value.length, input.value.length);
+        omnibar.triggerInput();
+        if (message.then === 'Enter') {
+            self.onEnter.call({tabbed: !!(omnibar.tabbed ^ !!message.shift), activeTab: true}) && front.hidePopup();
+        } else if (message.then === 'Escape') {
+            front.hidePopup();
+        } else if (message.then === 'Tab') {
+            self.onTab();
+        }
+    }
+    // Over chrome.runtime from the top frame, never postMessage: an Enter here picks
+    // a tab or opens a URL, and the page could post one. It takes another road than
+    // the open before it and can land first; it then waits for that open, briefly.
+    runtime.on('paletteTypeAhead', function(message) {
+        if (isOpen()) {
+            typeAhead(message);
+        } else {
+            early = {message, at: Date.now()};
+        }
+    });
 
     // Sent by the browser shortcut and the page mappings (content_scripts/tabSwitcher.js).
     front._actions['togglePalette'] = function() {
-        if (ui.style.display !== 'none' && ui.classList.contains('sk_palette')) {
+        if (isOpen()) {
             front.hidePopup();
         } else {
             front._actions['openOmnibar']({type: 'Palette'});
+            const keys = early && Date.now() - early.at < EARLY_TYPE_AHEAD_MS && early.message;
+            early = null;
+            keys && isOpen() && typeAhead(keys);
         }
     };
 

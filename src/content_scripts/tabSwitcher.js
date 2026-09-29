@@ -27,6 +27,7 @@ let relayArmed = false;
 let host = null;  // the top frame's Surfingkeys front, once installTabSwitcher ran there
 let holdMode = null;  // where Surfingkeys runs, its mode stack decides who sees a key first
 let session = null, claimed = false;
+let lastCmdId = null;  // the browser shortcut press the top frame last acted on
 
 // This frame holds the keyboard focus (not one of its subframes).
 function hasKeyboardFocus() {
@@ -57,6 +58,16 @@ function handleInTop(data) {
     if (!host) {
         return;
     }
+    if (data.open && data.cmdId) {
+        // A focused iframe inside a shadow root: the top frame sees the shadow host
+        // as its active element and acts too, and a second open of one press would
+        // close the palette at once or move the switcher on (a fresh session drops
+        // the relayed Alt release as well).
+        if (data.cmdId === lastCmdId) {
+            return;
+        }
+        lastCmdId = data.cmdId;
+    }
     if (data.open === 'openSwitcher') {
         session = generateQuickGuid();
         // Never switched from here, even when Alt looks released already: this frame
@@ -70,7 +81,9 @@ function handleInTop(data) {
     } else if (data.altUp && session) {
         RUNTIME('tabSwitcherModifierUp', {session, at: data.at});
     } else if (typeof data.typeAhead === 'string') {
-        host.command({action: 'paletteTypeAhead', text: data.typeAhead, then: data.then, shift: data.shift});
+        // they can end in Enter, so chrome.runtime (see above), and only once the
+        // frontend is up: until then nothing would take them
+        host.afterCommands(() => RUNTIME('tabSwitcherPaletteTypeAhead', {text: data.typeAhead, then: data.then, shift: data.shift}));
     }
 }
 
@@ -98,13 +111,13 @@ function beginHold() {
 // few hops after the key-down; relay the keyup that lands here meanwhile. Once
 // focus has moved (this window blurs), the frontend hears the keyup itself.
 // `alt` only arms that relay: a release this frame never sees switches nothing.
-function start(action, alt, backward) {
+function start(action, alt, backward, cmdId) {
     if (action === 'openSwitcher') {
-        deliver({open: 'openSwitcher', altHeld: alt, backward});
+        deliver({open: 'openSwitcher', altHeld: alt, backward, cmdId});
         relayArmed = alt;
     } else {
         const closing = window === top && isPanelOpen();
-        deliver({open: 'openPalette'});
+        deliver({open: 'openPalette', cmdId});
         closing || beginHold();  // closing needs no hold, and focus is already in the frame when open
     }
 }
@@ -169,13 +182,13 @@ if (window === top) {
 runtime.on('tabSwitcherCommand', (msg, sender, response) => {
     response({});  // tells the background a content script is here
     if (hasKeyboardFocus()) {
-        start(msg.action, altHeld);
+        start(msg.action, altHeld, false, msg.cmdId);
     } else if (window === top) {
         if (!document.hasFocus()) {
-            start(msg.action, false);
+            start(msg.action, false, false, msg.cmdId);
         } else {
             claimed = false;
-            setTimeout(() => claimed || start(msg.action, false), CLAIM_WAIT_MS);
+            setTimeout(() => claimed || start(msg.action, false, false, msg.cmdId), CLAIM_WAIT_MS);
         }
     }
 });
@@ -185,15 +198,18 @@ export default function installTabSwitcher(api, front) {
         host = front;
     }
     holdMode = new Mode("PaletteTypeAhead");
+    // keys the page makes up are not held: handed over, an Enter among them would
+    // let the page pick a tab or open a URL through the palette
     holdMode.addEventListener('keydown', (e) => {
-        if (!e.metaKey && !e.ctrlKey) {
+        if (e.isTrusted && !e.metaKey && !e.ctrlKey) {
             holdKey(e);
             e.sk_stopPropagation = true;
         }
     });
     // Fallbacks for when the browser shortcuts are unassigned. They cannot fire
     // while another extension holds the same shortcut. Shift on a letter is
-    // written as upper case.
+    // written as upper case. <Ctrl-P> is also the palette's key in pages on Windows
+    // and Linux, where Chrome keeps Ctrl+Shift+P from the browser shortcut.
     api.mapkey('<Alt-q>', '#3Visual tab switcher', () => start('openSwitcher', altHeld, false));
     api.mapkey('<Alt-Q>', '#3Visual tab switcher, previous tab', () => start('openSwitcher', altHeld, true));
     api.mapkey('<Meta-P>', '#8Command palette', () => start('openPalette'));

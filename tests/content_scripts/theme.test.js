@@ -215,16 +215,18 @@ describe('theme menu', () => {
         menu.onOpen();
         type('gruv');
         expect(menu.onEnter()).toBe(true);
-        expect(front.contentCommand).toHaveBeenLastCalledWith({action: 'pickTheme', name: 'gruvbox'});
+        expect(mockRUNTIME).toHaveBeenLastCalledWith('frontendRequest', {request: 'pickTheme', name: 'gruvbox'});
         type('dracula');
         rows()[0].onclick();
-        expect(front.contentCommand).toHaveBeenLastCalledWith({action: 'pickTheme', name: 'dracula'});
+        expect(mockRUNTIME).toHaveBeenLastCalledWith('frontendRequest', {request: 'pickTheme', name: 'dracula'});
         expect(front.hidePopup).toHaveBeenCalled();
+        // a pick is stored: never over postMessage, which the page can post to as well
+        expect(front.contentCommand).not.toHaveBeenCalled();
     });
 
     test(':theme picks by name, or opens the menu', () => {
         commands.theme(['rose', 'pine']);
-        expect(front.contentCommand).toHaveBeenLastCalledWith({action: 'pickTheme', name: 'rose pine'});
+        expect(mockRUNTIME).toHaveBeenLastCalledWith('frontendRequest', {request: 'pickTheme', name: 'rose pine'});
         commands.theme([]);
         expect(front._actions.openOmnibar).toHaveBeenCalledWith({type: 'Themes'});
     });

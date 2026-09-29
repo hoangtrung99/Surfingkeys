@@ -76,13 +76,18 @@ export default function installTabSwitcher(self, _response) {
         });
     }
 
+    let commandSeq = 0;
     chrome.commands.onCommand.addListener((command, tab) => {
         if (!COMMANDS.hasOwnProperty(command)) {
             return;  // start.js owns the rest
         }
         // Every frame gets it; the one holding keyboard focus opens the UI
         // (content_scripts/tabSwitcher.js), so Alt is tracked where it is released.
-        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command]}, () => {
+        // More than one frame can believe it holds the focus (an iframe inside a
+        // shadow root), so the top frame acts once per cmdId: a second open of the
+        // same press would close the palette again or move the switcher one tab on.
+        const cmdId = `${Date.now()}:${++commandSeq}`;
+        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command], cmdId}, () => {
             if (chrome.runtime.lastError && command === 'tabSwitcher') {
                 switchToPrevious(t);
             }
@@ -95,7 +100,9 @@ export default function installTabSwitcher(self, _response) {
     });
 
     // Tell the user once, at install, when another extension (jump, for example)
-    // already holds a shortcut: Chrome then leaves ours unassigned, silently.
+    // already holds a shortcut: Chrome then leaves ours unassigned, silently. It does
+    // the same with a key Chrome keeps for itself, which is why the palette is not
+    // Ctrl+Shift+P (print) on Windows and Linux (tabSwitcher.commands.json).
     chrome.runtime.onInstalled.addListener((details) => {
         if (details.reason !== 'install') {
             return;
@@ -283,13 +290,17 @@ export default function installTabSwitcher(self, _response) {
             });
         }));
     };
-    // A subframe's report to its top frame, and the top frame's Alt release to
-    // the frontend: sent here, never over postMessage, which the page can use too.
+    // A subframe's report to its top frame, and the top frame's Alt release and
+    // typed-ahead keys to the frontend: sent here, never over postMessage, which the
+    // page can use too.
     self.tabSwitcherRelay = function(message, sender) {
         sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherRelay', data: message.data}, {frameId: 0}, () => void chrome.runtime.lastError);
     };
     self.tabSwitcherModifierUp = function(message, sender) {
         sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'tabSwitcherModifierUp', session: message.session, at: message.at}, () => void chrome.runtime.lastError);
+    };
+    self.tabSwitcherPaletteTypeAhead = function(message, sender) {
+        sender.tab && chrome.tabs.sendMessage(sender.tab.id, {subject: 'paletteTypeAhead', text: message.text, then: message.then, shift: message.shift}, () => void chrome.runtime.lastError);
     };
     // Thumbnails are a separate request so the palette never pays for images
     // and the switcher can draw its cards before they arrive.

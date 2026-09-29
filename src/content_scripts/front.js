@@ -74,6 +74,13 @@ function createFront(insert, normal, hints, visual, browser) {
         }
     };
 
+    // `cb` runs once the frontend is up and every command() made so far has been
+    // posted to it: a message `cb` sends another way (chrome.runtime) then finds a
+    // frontend to take it, though it may still land before those commands.
+    self.afterCommands = function(cb) {
+        frontendPromise && frontendPromise.then(() => runtime.getTopURL(cb));
+    };
+
     function applyUICommand(cmd) {
         _uiUserSettings.push(cmd);
         if (frontendPromise) {
@@ -803,11 +810,6 @@ function createFront(insert, normal, hints, visual, browser) {
         dispatchSKEvent('user', ['executeUserCommand', message.name, message.args]);
     };
 
-    // from the theme menu and :theme (ui/themeMenu.js); theme.js sets pickTheme
-    _actions["pickTheme"] = function(message) {
-        self.pickTheme && self.pickTheme(message.name);
-    };
-
     var _active = window === top;
     _actions['deactivated'] = function(message) {
         _active = false;
@@ -816,6 +818,22 @@ function createFront(insert, normal, hints, visual, browser) {
     _actions['activated'] = function(message) {
         _active = true;
     };
+
+    // What this tab's frontend asks of the page (ui/palette.js, ui/themeMenu.js),
+    // relayed by the background (frontendRequest). Never an _actions entry: the page
+    // can post to this window like any content script, and a theme pick or a
+    // blocklist toggle writes settings. theme.js sets pickTheme.
+    if (window === top) {
+        runtime.on('frontendRequest', function(msg) {
+            if (msg.request === 'pickTheme') {
+                self.pickTheme && self.pickTheme(msg.name);
+            } else if (msg.request === 'toggleBlocklist') {
+                normal.toggleBlocklist();
+            } else if (msg.request === 'showUsage') {
+                self.showUsage();
+            }
+        });
+    }
 
     runtime.on('focusFrame', function(msg, sender, response) {
         if (msg.frameId === window.frameId) {

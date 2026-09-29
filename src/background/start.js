@@ -2476,6 +2476,21 @@ function start(browser) {
             });
         }
     };
+    /*
+     * What a tab's frontend asks of the page it sits on (a theme pick, a palette
+     * action), handed to that page's top frame (front.js). Only the frontend may
+     * ask: these write settings, and the frontend's usual way to the page,
+     * postMessage, is open to the page itself.
+     */
+    self.frontendRequest = function(message, sender) {
+        if (sender.tab && chrome.runtime.getURL("pages/frontend.html") === sender.url) {
+            sendTabMessage(sender.tab.id, 0, {
+                subject: 'frontendRequest',
+                request: message.request,
+                name: message.name
+            });
+        }
+    };
     browser.extendBackground && browser.extendBackground(self, _response);
 }
 
