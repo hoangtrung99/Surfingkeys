@@ -181,6 +181,14 @@ describe('repeat counts', () => {
         expect(requests()).toEqual([expect.objectContaining({ action: 'closeTab', repeats: 1 })]);
     });
 
+    test('the count of N% is a percentage: no prompt to repeat it', () => {
+        h.press('50%');
+        expect(uiRequests().filter((a) => a.action === 'showDialog')).toEqual([]);
+        // the smooth scroll it starts marks <html> until it ends, which jsdom never
+        // lays out for: leave the page source as the other tests expect it
+        document.documentElement.removeAttribute('style');
+    });
+
     test('Esc drops a count typed so far', () => {
         h.press('3<Esc>x');
         expect(requests()).toEqual([expect.objectContaining({ action: 'closeTab', repeats: 1 })]);

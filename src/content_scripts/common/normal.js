@@ -986,6 +986,8 @@ function createNormal(insert) {
         annotation: "Scroll to percentage of current page",
         feature_group: 2,
         repeatIgnore: true,
+        // the count is the percentage, used once: no prompt to repeat it N times
+        repeatNoThrottling: true,
         code: self.scroll.bind(self, "byRatio")
     });
     self.mappings.add("cs", {
