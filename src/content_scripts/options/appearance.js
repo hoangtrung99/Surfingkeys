@@ -59,7 +59,7 @@ export default {
         };
         const cards = themeEntries().map((e) => {
             const input = h('input', {type: 'radio', name: 'theme', value: e.id, class: 'sk-vh'});
-            const kind = e.id === NO_THEME ? 'Follows the system' : (e.light ? 'Light' : 'Dark');
+            const kind = e.id === NO_THEME ? 'Surfingkeys’ own look' : (e.light ? 'Light' : 'Dark');
             h('label', {class: 'sk-theme-card sk-row', dataset: {theme: e.id, filter: `${e.name} ${kind} ${e.also}`}},
                 input,
                 preview(),
