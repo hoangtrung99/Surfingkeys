@@ -1,12 +1,12 @@
 // Keys: every normal-mode mapping, grouped as the usage popup groups them, with
 // a key of the user's own for any of them (basicMappings, {originKey: newKey | ""}).
-// content.js applies them with api.map, which ADDS the new key: the original one
-// keeps working unless the action is turned off (an empty key) or another entry
-// maps onto it, and the rows say so (decision D1). keyConflicts.js tells what a
+// common/basicMappings.js ADDS the new key: the original one keeps working unless
+// the action is turned off (an empty key) or another entry's new key takes it,
+// and the rows say so (decision D1). keyConflicts.js tells what a
 // change does to the other keys. Advanced mode ignores basicMappings
 // (content.js applySettings), so the list is read-only there.
 import { FEATURE_GROUPS, localizeAnnotation } from '../common/annotation.js';
-import { SPECIAL_KEYS, conflictsFor, snippetLines, storedOrder } from '../common/keyConflicts.js';
+import { SPECIAL_KEYS, conflictsFor, snippetLines, takenBy } from '../common/keyConflicts.js';
 import { closeDialog, fold, h, openDialog } from './dom.js';
 import { createShortcutsCard } from './shortcuts.js';
 
@@ -56,6 +56,8 @@ export function describeHint(hint, newKey, labelOf, limit = HINT_WORDS) {
         return `${newKey} never runs: ${listed(hint.words, limit)} runs as soon as it is typed.`;
     case 'stillBound':
         return `${hint.word} still works too.`;
+    case 'originShadowed':
+        return `${hint.word} stops working too: ${hint.key}, the new key of another action, runs as soon as it is typed.`;
     }
     return '';
 }
@@ -103,7 +105,7 @@ export default {
         const picker = h('dialog', {id: 'keyPicker', class: 'sk-dialog', 'aria-labelledby': 'keyPickerTitle', 'aria-describedby': 'keyPickerLead'},
             pickerTitle,
             pickerLead,
-            h('p', {class: 'sk-muted'}, h('kbd', null, 'Backspace'), ' deletes backward, ', h('kbd', null, 'Enter'), ' saves, ',
+            h('p', {class: 'sk-muted'}, 'The first key pressed replaces the current one. ', h('kbd', null, 'Backspace'), ' deletes backward, ', h('kbd', null, 'Enter'), ' saves, ',
                 h('kbd', null, 'Esc'), ' cancels. No key at all turns the action off.'),
             pressed,
             pickerHints,
@@ -170,7 +172,7 @@ export default {
                 ctx.announce(`“${label}” turned off`);
                 rows.get(a.origin).reset.focus();
             });
-            // <Alt-s> is no mapping: an empty key cannot remove it
+            // <Alt-s> is the key that turns Surfingkeys back on for a site: never off
             off.hidden = !!a.special;
             const reset = h('button', {type: 'button', class: 'sk-btn sk-btn-small sk-keyreset', 'aria-label': `Reset “${label}” to ${a.origin}`}, 'Reset');
             reset.addEventListener('click', () => {
@@ -188,7 +190,6 @@ export default {
         }
 
         function update() {
-            const targets = new Set(Object.keys(remaps).map((k) => remaps[k]));
             const all = words();
             let changes = 0;
             rows.forEach((r, origin) => {
@@ -198,14 +199,14 @@ export default {
                 r.button.dataset.custom = custom;
                 r.button.textContent = custom || 'Off';
                 r.button.disabled = advanced;
-                r.button.setAttribute('aria-label', `${r.label}: ${custom ? `key ${custom}` : 'turned off'}${changed && custom && !targets.has(origin) ? `, ${origin} still works` : ''}. Change`);
+                r.button.setAttribute('aria-label', `${r.label}: ${custom ? `key ${custom}` : 'turned off'}${changed && custom && takenBy(remaps, origin) === null ? `, ${origin} still works` : ''}. Change`);
                 r.off.hidden = r.special || custom === '';
                 r.off.disabled = advanced;
                 r.reset.hidden = !changed;
                 r.reset.disabled = advanced;
-                // the original key keeps its action unless another row takes it
+                // the original key keeps its action unless another row's new key takes it
                 r.note.textContent = !changed ? '' : custom === '' ? `${origin} is off`
-                    : targets.has(origin) ? '' : `${origin} still works`;
+                    : takenBy(remaps, origin) !== null ? '' : `${origin} still works`;
                 const hints = changed && custom ? conflictsFor(all, remaps, origin, custom, specialKeys()).filter((x) => x.type !== 'stillBound') : [];
                 r.hint.hidden = !hints.length;
                 r.hint.textContent = hints.map((x) => describeHint(x, custom, labelOf)).join(' ');
@@ -235,7 +236,6 @@ export default {
         filter.addEventListener('search', applyFilter);
 
         function write() {
-            remaps = storedOrder(remaps);
             RUNTIME('updateSettings', {
                 settings: {
                     basicMappings: remaps
@@ -279,13 +279,23 @@ export default {
         const KeyPicker = (function() {
             const self = new Mode("KeyPicker");
             let _key = "";
+            // _key is still the row's current key, as if selected: the first key
+            // pressed replaces it and Backspace clears it
+            let _selected = false;
             // the row being changed, null while the picker is closed
             let _origin = null;
 
+            // <Alt-s> is the key that turns Surfingkeys back on for a site
+            function mayTurnOff() {
+                const r = rows.get(_origin);
+                return !(r && r.special);
+            }
             function showKey() {
                 inputKey.textContent = _key || ' ';
+                inputKey.classList.toggle('sk-keyselected', _selected && _key !== '');
+                pickerSave.disabled = _key === '' && !mayTurnOff();
                 const hints = conflictsFor(words(), remaps, _origin, _key, specialKeys());
-                const lines = _key === '' ? ['No key: the action is turned off.']
+                const lines = _key === '' ? [mayTurnOff() ? 'No key: the action is turned off.' : 'This action cannot be turned off: press a key for it.']
                     : _key === _origin ? ['The default key.']
                         : hints.map((x) => describeHint(x, _key, labelOf, Infinity));
                 pickerHints.replaceChildren(...lines.map((text, i) => h('li', {class: hints[i] && hints[i].type !== 'stillBound' ? 'sk-keywarn' : ''}, text)));
@@ -297,10 +307,10 @@ export default {
             }
             function save() {
                 const origin = _origin;
-                close();
-                if (origin === null) {
+                if (origin === null || (_key === '' && !mayTurnOff())) {
                     return;
                 }
+                close();
                 const before = customised(origin) ? remaps[origin] : origin;
                 if (_key !== before) {
                     store(origin, _key);
@@ -312,9 +322,10 @@ export default {
                 if (event.keyCode === 27) {
                     close();
                 } else if (event.keyCode === 8) {
-                    let ek = KeyboardUtils.encodeKeystroke(_key);
+                    let ek = _selected ? '' : KeyboardUtils.encodeKeystroke(_key);
                     ek = ek.substr(0, ek.length - 1);
                     _key = KeyboardUtils.decodeKeystroke(ek);
+                    _selected = false;
                     showKey();
                 } else if (event.keyCode === 13) {
                     save();
@@ -331,7 +342,8 @@ export default {
                     }, null, 4);
                     reportIssue(`Unrecognized key event: ${event.sk_keyName}`, keyStr);
                 } else {
-                    _key += KeyboardUtils.decodeKeystroke(event.sk_keyName);
+                    _key = (_selected ? '' : _key) + KeyboardUtils.decodeKeystroke(event.sk_keyName);
+                    _selected = false;
                     showKey();
                 }
                 event.sk_stopPropagation = true;
@@ -347,6 +359,7 @@ export default {
                 _enter.call(self);
                 _origin = origin;
                 _key = elm.dataset.custom;
+                _selected = true;
                 pickerTitle.textContent = `New key for “${labelOf(origin)}”`;
                 pickerLead.textContent = `The new key is added, and ${origin} keeps working too.`;
                 showKey();

@@ -1,9 +1,12 @@
 /*
  * What a key change in basicMappings ({originKey: newKey | ""}) does to the other
- * normal-mode keys, the way content.js applyBasicMappings applies it:
- *   - a new key is ADDED with api.map; the original key keeps its action unless
- *     another entry maps onto it (a swap), or the entry is "" (turned off);
- *   - api.map replaces the new key's Trie node, so its own action, and every
+ * normal-mode keys, the way common/basicMappings.js applies it. The stored order
+ * of the entries does not matter: every action is read first, the entries
+ * turning an action off ("") run next, then the moves.
+ *   - a new key is ADDED; the original key keeps its action unless another entry
+ *     moves onto it (a swap) or onto a key it starts with, or the entry is ""
+ *     (turned off);
+ *   - a move replaces the new key's Trie node, so its own action, and every
  *     longer mapping under it (g under gg, g0, g$...), is gone;
  *   - a Trie node with an action runs as soon as it is reached (mode.js), so a
  *     new key that starts with a bound key never runs.
@@ -48,6 +51,8 @@ function has(o, k) {
  *   {type: 'unreachable', words}    these bound keys run first, so newKey never does
  *                                   (words: the shortest keys first)
  *   {type: 'stillBound', word}      the original key keeps working too (decision D1)
+ *   {type: 'originShadowed', word, key}  another entry's new key `key` starts the
+ *                                   original key, which stops working
  * in that order. Turning an action off ("") or keeping its key says nothing.
  */
 export function conflictsFor(words, remaps, origin, newKey, specialKeys = SPECIAL_KEYS) {
@@ -93,27 +98,27 @@ export function conflictsFor(words, remaps, origin, newKey, specialKeys = SPECIA
         hints.push({type: 'unreachable', words: shorter});
     }
 
-    if (!Object.keys(others).some((o) => others[o] === origin)) {
+    const taker = takenBy(others, origin);
+    if (taker === null) {
         hints.push({type: 'stillBound', word: origin});
+    } else if (taker !== origin) {
+        hints.push({type: 'originShadowed', word: origin, key: taker});
     }
     return hints;
 }
 
 /*
- * basicMappings in the order to store them: the entries that turn an action off
- * first. applyBasicMappings runs the entries in stored order, and one that turns
- * off a key after another entry has mapped onto it removes that new binding too.
+ * The new key of another entry that takes `origin` away: origin itself (a swap)
+ * or a key origin starts with, whose move removes origin's Trie node. null
+ * while origin keeps working.
  */
-export function storedOrder(remaps) {
-    const ordered = {};
-    const keys = Object.keys(remaps || {});
-    keys.filter((o) => remaps[o] === '').forEach((o) => {
-        ordered[o] = '';
-    });
-    keys.filter((o) => remaps[o] !== '').forEach((o) => {
-        ordered[o] = remaps[o];
-    });
-    return ordered;
+export function takenBy(remaps, origin) {
+    const keys = Object.keys(remaps || {}).filter((o) => o !== origin && remaps[o]).map((o) => remaps[o]);
+    if (keys.includes(origin)) {
+        return origin;
+    }
+    const shorter = keys.filter((k) => isPrefixOf(k, origin)).sort(shortFirst);
+    return shorter.length ? shorter[0] : null;
 }
 
 // a key no default mapping uses, to hold an action while a swap moves it
@@ -125,33 +130,54 @@ function quote(key) {
 
 /*
  * basicMappings as settings-script lines with the same effect. api.map copies
- * the action the old key has at that moment, so an entry is written before any
- * entry that maps onto its original key; a cycle (d and j swapped) parks one
- * action on SPARE_KEY until its key is free.
+ * the action the old key has at that moment and replaces the new key's node, so
+ * an entry is written before any entry whose new key is its original key or
+ * starts it; a cycle (d and j swapped) parks one action on a spare key
+ * (SPARE_KEY first) until nothing waits for its key, and so does an action a
+ * key turned off would take along (g0 under g). Entries whose new keys are
+ * equal or start one another are written in the order basicMappings.js applies
+ * them, so the same one wins.
  */
 export function snippetLines(remaps) {
     remaps = remaps || {};
-    const lines = Object.keys(remaps).filter((o) => remaps[o] === '').sort()
-        .map((o) => `api.unmap(${quote(o)});`);
+    const lines = [];
+    const offs = Object.keys(remaps).filter((o) => remaps[o] === '').sort();
     const moves = {};
     Object.keys(remaps).filter((o) => remaps[o] && remaps[o] !== o).sort().forEach((o) => {
         moves[o] = remaps[o];
     });
     const origins = Object.keys(moves);
     const done = new Set();
-    let parked = null;
+    // origin -> the spare key holding its action
+    const parked = new Map();
+    function park(o) {
+        let n = 12, spare = SPARE_KEY;
+        while ([...parked.values()].includes(spare)) {
+            spare = SPARE_KEY.replace(/\d+>$/, `${--n}>`);
+        }
+        parked.set(o, spare);
+        lines.push(`api.map(${quote(spare)}, ${quote(o)});`);
+    }
+    // a key turned off takes the longer keys under it along
+    origins.filter((o) => offs.some((k) => isPrefixOf(k, o))).forEach(park);
+    offs.forEach((o) => lines.push(`api.unmap(${quote(o)});`));
+    const related = (a, b) => a === b || isPrefixOf(a, b) || isPrefixOf(b, a);
+    // o waits for p: writing o would destroy p's original key before it is read,
+    // or p comes first where both write the same keys
+    const waits = (o, p) => p !== o && !done.has(p) && (
+        (!parked.has(p) && (moves[o] === p || isPrefixOf(moves[o], p)))
+        || (p < o && related(moves[o], moves[p])));
     while (done.size < origins.length) {
-        const ready = origins.find((o) => !done.has(o) && (!has(moves, moves[o]) || done.has(moves[o]) || parked === moves[o]));
+        const ready = origins.find((o) => !done.has(o) && !origins.some((p) => waits(o, p)));
         if (ready === undefined) {
-            parked = origins.find((o) => !done.has(o));
-            lines.push(`api.map(${quote(SPARE_KEY)}, ${quote(parked)});`);
+            park(origins.find((o) => !done.has(o) && !parked.has(o)));
             continue;
         }
-        lines.push(`api.map(${quote(moves[ready])}, ${quote(parked === ready ? SPARE_KEY : ready)});`);
+        lines.push(`api.map(${quote(moves[ready])}, ${quote(parked.get(ready) || ready)});`);
         done.add(ready);
-        if (parked === ready) {
-            lines.push(`api.unmap(${quote(SPARE_KEY)});`);
-            parked = null;
+        if (parked.has(ready)) {
+            lines.push(`api.unmap(${quote(parked.get(ready))});`);
+            parked.delete(ready);
         }
     }
     return lines.join('\n');

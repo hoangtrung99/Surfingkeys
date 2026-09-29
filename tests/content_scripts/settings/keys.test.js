@@ -52,7 +52,6 @@ function setup({settings = {}, browser = 'Chrome', commandList} = {}) {
     const RUNTIME = jest.fn((action, args) => {
         if (action === 'updateSettings') {
             Object.assign(stored, JSON.parse(JSON.stringify(args.settings)));
-            stored.order = Object.keys(args.settings.basicMappings || {});
         }
     });
     const ctx = {
@@ -146,6 +145,14 @@ describe('the list', () => {
         expect(row('x').querySelector('.sk-keyreset').hidden).toBe(true);
     });
 
+    test('a key whose original another entry shadows says it stops working', () => {
+        setup({settings: {basicMappings: {e: 'g', gg: 'G'}}});
+        expect(chip('gg').previousElementSibling.textContent).toBe('');
+        expect(row('gg').querySelector('.sk-keyhint').textContent)
+            .toBe('gg stops working too: g, the new key of another action, runs as soon as it is typed.');
+        expect(chip('gg').getAttribute('aria-label')).not.toContain('still works');
+    });
+
     test('a swap is clean and says nothing about the old keys', () => {
         setup({settings: {basicMappings: {d: 'e', e: 'd'}}});
         expect(chip('d').previousElementSibling.textContent).toBe('');
@@ -179,8 +186,12 @@ describe('the key picker', () => {
         const {stored} = setup();
         chip('d').focus();
         chip('d').click();
-        clear(1);
+        // the current key is selected: the first key pressed replaces it
+        expect(document.getElementById('inputKey').textContent).toBe('d');
+        expect(document.getElementById('inputKey').classList.contains('sk-keyselected')).toBe(true);
         type('q');
+        expect(document.getElementById('inputKey').textContent).toBe('q');
+        expect(document.getElementById('inputKey').classList.contains('sk-keyselected')).toBe(false);
         expect(hints()).toEqual(['q stops running “Click on an Image or a button”.', 'd still works too.']);
         press(13);
         expect(stored.basicMappings).toEqual({d: 'q'});
@@ -209,7 +220,31 @@ describe('the key picker', () => {
         chip('x').click();
         type('Z');
         document.querySelector('#keyPicker .sk-btn-primary').click();
-        expect(stored.basicMappings).toEqual({x: 'xZ'});
+        expect(stored.basicMappings).toEqual({x: 'Z'});
+    });
+
+    test('keys after the first add to it, Backspace deletes the last one', () => {
+        const {stored} = setup({settings: {basicMappings: {x: 'X'}}});
+        chip('x').click();
+        type('ab');
+        clear(1);
+        type('c');
+        expect(document.getElementById('inputKey').textContent).toBe('ac');
+        press(13);
+        expect(stored.basicMappings).toEqual({x: 'ac'});
+    });
+
+    test('<Alt-s> takes no empty key', () => {
+        const {RUNTIME} = setup();
+        chip('<Alt-s>').click();
+        clear(1);
+        expect(hints()).toEqual(['This action cannot be turned off: press a key for it.']);
+        expect(document.querySelector('#keyPicker .sk-btn-primary').disabled).toBe(true);
+        press(13);
+        expect(picker().hasAttribute('open')).toBe(true);
+        expect(RUNTIME).not.toHaveBeenCalledWith('updateSettings', expect.anything());
+        type('z');
+        expect(document.querySelector('#keyPicker .sk-btn-primary').disabled).toBe(false);
     });
 
     test('the default key again removes the entry', () => {
@@ -246,10 +281,10 @@ describe('Disable and Reset', () => {
         expect(row('<Alt-s>').querySelector('.sk-keyoff').hidden).toBe(true);
     });
 
-    test('keys turned off are stored first, so they cannot undo another change', () => {
-        const {stored} = setup({settings: {basicMappings: {d: 'e'}}});
-        row('e').querySelector('.sk-keyoff').click();
-        expect(stored.order).toEqual(['e', 'd']);
+    test('turning a key off and giving it to another action is clean, in either order', () => {
+        setup({settings: {basicMappings: {e: '', d: 'e'}}});
+        expect(row('d').querySelector('.sk-keyhint').hidden).toBe(true);
+        expect(chip('d').previousElementSibling.textContent).toBe('d still works');
     });
 
     test('Reset all asks first, then clears every change', () => {

@@ -1,6 +1,9 @@
 import {
-    SPARE_KEY, SPECIAL_KEYS, conflictsFor, isPrefixOf, keystrokes, snippetLines, storedOrder,
+    SPARE_KEY, SPECIAL_KEYS, conflictsFor, isPrefixOf, keystrokes, snippetLines, takenBy,
 } from '../../src/content_scripts/common/keyConflicts.js';
+import applyBasicMappings from '../../src/content_scripts/common/basicMappings.js';
+import KeyboardUtils from '../../src/content_scripts/common/keyboardUtils';
+import Trie from '../../src/content_scripts/common/trie.js';
 
 // default normal-mode keys around the cases measured in a real page (remap_check.py)
 const WORDS = ['d', 'e', 'j', 'k', 'q', 'x', 'X', 'u', 'gg', 'g0', 'g$', 'gU', 'gi', 'gf', 'gxx', 'gx0',
@@ -109,53 +112,46 @@ describe('conflictsFor', () => {
 });
 
 /*
- * A model of normal-mode keys as actions: api.map copies the action the old key
- * has at that moment (and replaces the whole node, so longer keys under it go),
- * api.unmap removes a key; applyBasicMappings is content.js's, over this model.
+ * Normal-mode keys in a real Trie, keyed by encoded keystrokes, with api.map and
+ * api.unmap as api.js has them: map copies the action the old key has at that
+ * moment and replaces the new key's whole node (longer keys under it go), unmap
+ * removes the node found.
  */
+const enc = (k) => KeyboardUtils.encodeKeystroke(k);
 function model(words) {
-    const keys = {};
-    words.forEach((w) => {
-        keys[w] = `act:${w}`;
-    });
-    const put = (k, action) => {
-        Object.keys(keys).filter((w) => isPrefixOf(k, w)).forEach((w) => delete keys[w]);
-        keys[k] = action;
-    };
-    return {
-        keys,
-        find: (k) => keys[k],
+    const mappings = new Trie();
+    words.forEach((w) => mappings.add(enc(w), {action: `act:${w}`}));
+    const normal = {mappings};
+    const api = {
         map(n, o) {
-            if (keys[o] !== undefined) {
-                put(n, keys[o]);
+            const node = mappings.find(enc(o));
+            if (node && node.meta) {
+                mappings.remove(enc(n));
+                mappings.add(enc(n), Object.assign({}, node.meta));
             }
         },
         unmap(k) {
-            delete keys[k];
+            if (mappings.find(enc(k))) {
+                mappings.remove(enc(k));
+            }
         },
-        add: put,
+    };
+    return {
+        api,
+        normal,
+        get keys() {
+            const keys = {};
+            mappings.getWords().forEach((w) => {
+                keys[KeyboardUtils.decodeKeystroke(w)] = mappings.find(w).meta.action;
+            });
+            return keys;
+        },
     };
 }
 
-function applyBasicMappings(m, mappings) {
-    const originKeys = new Set(Object.keys(mappings));
-    const originMappings = {};
-    for (const originKey in mappings) {
-        const newKey = mappings[originKey];
-        if (originKeys.has(newKey)) {
-            const target = m.find(newKey);
-            if (target) {
-                originMappings[newKey] = target;
-            }
-        }
-        if (newKey === '') {
-            m.unmap(originKey);
-        } else if (originMappings.hasOwnProperty(originKey)) {
-            m.add(newKey, originMappings[originKey]);
-        } else {
-            m.map(newKey, originKey);
-        }
-    }
+function apply(words, remaps, onMoved) {
+    const m = model(words);
+    applyBasicMappings(m.api, m.normal, remaps, onMoved);
     return m.keys;
 }
 
@@ -164,12 +160,12 @@ function runLines(m, text) {
     text.split('\n').filter((l) => l).forEach((line) => {
         let r = line.match(/^api\.map\(('(?:\\.|[^'])*'), ('(?:\\.|[^'])*')\);$/);
         if (r) {
-            m.map(unq(r[1]), unq(r[2]));
+            m.api.map(unq(r[1]), unq(r[2]));
             return;
         }
         r = line.match(/^api\.unmap\(('(?:\\.|[^'])*')\);$/);
         expect(r).not.toBeNull();
-        m.unmap(unq(r[1]));
+        m.api.unmap(unq(r[1]));
     });
     return m.keys;
 }
@@ -200,23 +196,103 @@ describe('snippetLines', () => {
         [{d: 'j', j: 'd', x: 'X', X: 'x'}],
         [{j: '', d: 'j'}],
         [{x: '', e: 'g', '<Ctrl-6>': 'u', u: '<Ctrl-6>'}],
+        [{e: 'g', gg: '<Alt-y>'}],
+        [{e: 'g', gg: 'e'}],
+        [{e: 'g', gg: 'q', g0: 'e'}],
     ])('does what storing %p does', (remaps) => {
-        const stored = applyBasicMappings(model(WORDS), storedOrder(remaps));
-        expect(runLines(model(WORDS), snippetLines(remaps))).toEqual(stored);
+        expect(runLines(model(WORDS), snippetLines(remaps))).toEqual(apply(WORDS, remaps));
+    });
+
+    test('a second action waiting parks on another spare key', () => {
+        const text = snippetLines({b: 'g', gg: 'g'});
+        expect(text).toContain(SPARE_KEY);
+        expect(text).toContain('<Ctrl-Alt-Shift-F11>');
+        expect(runLines(model(WORDS), text)).toEqual(apply(WORDS, {b: 'g', gg: 'g'}));
+    });
+
+    test('an action a key turned off would take along is parked first', () => {
+        const words = ['g', 'gg', 'g0', 'a', 'ab'];
+        const remaps = {g: '', g0: 'g', a: '', ab: 'z'};
+        expect(runLines(model(words), snippetLines(remaps))).toEqual(apply(words, remaps));
+    });
+
+    test('does what storing does, over many generated cases', () => {
+        const words = ['e', 'g', 'gg', 'g0', 'a', 'ab', 'b', '<Alt-p>', '<Alt-m>'];
+        const keys = ['', ...words, 'z'];
+        let seed = 7;
+        const next = (n) => {
+            seed = (seed * 1103515245 + 12345) % 2147483648;
+            return seed % n;
+        };
+        for (let i = 0; i < 3000; i++) {
+            const remaps = {};
+            for (let j = 1 + next(5); j > 0; j--) {
+                remaps[words[next(words.length)]] = keys[next(keys.length)];
+            }
+            expect([remaps, runLines(model(words), snippetLines(remaps))]).toEqual([remaps, apply(words, remaps)]);
+        }
     });
 });
 
-describe('storedOrder', () => {
-    test('puts the keys turned off first, and keeps the rest as they were', () => {
-        const ordered = storedOrder({d: 'j', j: '', x: 'X'});
-        expect(Object.keys(ordered)).toEqual(['j', 'd', 'x']);
-        expect(ordered).toEqual({d: 'j', j: '', x: 'X'});
+// chrome.storage hands basicMappings back with the keys sorted, whatever order they were written in
+function orders(remaps) {
+    const keys = Object.keys(remaps);
+    const all = [[]];
+    keys.forEach(() => {
+        all.splice(0, all.length, ...all.flatMap((p) => keys.filter((k) => !p.includes(k)).map((k) => p.concat(k))));
+    });
+    return all.map((p) => Object.fromEntries(p.map((k) => [k, remaps[k]])));
+}
+
+describe('applyBasicMappings', () => {
+    test.each([
+        [{j: '', d: 'j'}, {j: 'act:d', d: 'act:d'}],
+        [{d: 'j', j: 'd'}, {j: 'act:d', d: 'act:j'}],
+        [{e: 'g', gg: '<Alt-y>'}, {g: 'act:e', '<Alt-y>': 'act:gg', gg: undefined}],
+    ])('%p gives the same keys in any stored order', (remaps, expected) => {
+        const results = orders(remaps).map((r) => apply(WORDS, r));
+        results.forEach((keys) => expect(keys).toEqual(results[0]));
+        Object.keys(expected).forEach((k) => expect(results[0][k]).toBe(expected[k]));
     });
 
-    test('so a key turned off after another entry took it keeps the new binding', () => {
-        const keys = applyBasicMappings(model(WORDS), storedOrder({d: 'j', j: ''}));
-        expect(keys.j).toBe('act:d');
-        // stored as the entries were made, the later "" removes it
-        expect(applyBasicMappings(model(WORDS), {d: 'j', j: ''}).j).toBeUndefined();
+    test('works on bracketed keys: turned off, swapped, moved', () => {
+        const words = ['<Alt-p>', '<Alt-m>', '<Ctrl-6>', 'x'];
+        const off = apply(words, {'<Alt-p>': ''});
+        expect(off['<Alt-p>']).toBeUndefined();
+        expect(off['<Alt-m>']).toBe('act:<Alt-m>');
+        const swapped = apply(words, {'<Alt-p>': '<Alt-m>', '<Alt-m>': '<Alt-p>'});
+        expect(swapped['<Alt-p>']).toBe('act:<Alt-m>');
+        expect(swapped['<Alt-m>']).toBe('act:<Alt-p>');
+        const moved = apply(words, {x: '<Ctrl-6>', '<Ctrl-6>': ''});
+        expect(moved['<Ctrl-6>']).toBe('act:x');
+    });
+
+    test('a key no mapping has goes to api.map, for the Mode special keys', () => {
+        const m = model(WORDS);
+        m.api.map = jest.fn();
+        applyBasicMappings(m.api, m.normal, {'<Alt-s>': '<Alt-z>'});
+        expect(m.api.map).toHaveBeenCalledWith('<Alt-z>', '<Alt-s>');
+    });
+
+    test('tells only the moves whose origin keeps its default action', () => {
+        const onMoved = jest.fn();
+        apply(WORDS, {d: 'j', j: 'd', x: 'X', q: ''}, onMoved);
+        expect(onMoved.mock.calls).toEqual([['X', 'x']]);
+    });
+});
+
+describe('takenBy', () => {
+    test('a swap, a shadowing new key, or nothing', () => {
+        expect(takenBy({d: 'j', j: 'd'}, 'j')).toBe('j');
+        expect(takenBy({e: 'g', gg: 'Z'}, 'gg')).toBe('g');
+        expect(takenBy({e: 'g', gg: 'Z'}, 'e')).toBeNull();
+        expect(takenBy({e: '', gg: 'Z'}, 'e')).toBeNull();
+        expect(takenBy(undefined, 'e')).toBeNull();
+    });
+
+    test('conflictsFor says the original key stops working', () => {
+        const hints = conflictsFor(WORDS, {e: 'g'}, 'gg', '<Alt-y>');
+        expect(types(hints)).toEqual(['originShadowed']);
+        expect(hint(hints, 'originShadowed')).toEqual({type: 'originShadowed', word: 'gg', key: 'g'});
     });
 });
