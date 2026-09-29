@@ -217,6 +217,30 @@ describe('repeat counts', () => {
             jest.useRealTimers();
         }
     });
+
+    test(';ql shows the last keys', () => {
+        h.settingsUpdated({ lastKeys: ['yT'] });
+        h.press(';ql');
+        expect(h.ui('showPopup')).toEqual([expect.objectContaining({ content: 'yT' })]);
+    });
+
+    // lastKeys is "" (runtime.conf's default) until an action is recorded
+    test(';ql and . with no last action say so, and do nothing', () => {
+        h.settingsUpdated({ lastKeys: '' });
+        jest.useFakeTimers();
+        try {
+            expect(() => h.press(';ql')).not.toThrow();
+            expect(h.ui('showPopup')).toEqual([]);
+            expect(h.ui('showBanner')).toEqual([expect.objectContaining({ content: 'No last action.' })]);
+            expect(() => {
+                h.press('.');
+                jest.advanceTimersByTime(1);
+            }).not.toThrow();
+            expect(requests()).toEqual([]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
 });
 
 describe('marks', () => {

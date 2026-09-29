@@ -107,7 +107,15 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         });
     }
 
+    // lastKeys is "" until an action is recorded (the default in runtime.conf),
+    // an array of keys after: anything but a non-empty array has nothing to show
+    // or replay, and indexing into it would throw.
+    const hasLastKeys = () => Array.isArray(runtime.conf.lastKeys) && runtime.conf.lastKeys.length > 0;
     mapkey(";ql", '#0Show last action', function() {
+        if (!hasLastKeys()) {
+            showBanner("No last action.");
+            return;
+        }
         showPopup(htmlEncode(runtime.conf.lastKeys.map(function(k) {
             return KeyboardUtils.decodeKeystroke(k);
         }).join(' → ')));
@@ -350,6 +358,9 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         // lastKeys in format: <keys in normal mode>[,(<mode name>\t<keys in this mode>)*], examples
         // ['se']
         // ['f', 'Hints\tBA']
+        if (!hasLastKeys()) {
+            return;
+        }
         const lastKeys = runtime.conf.lastKeys;
         normal.feedkeys(lastKeys[0]);
         var modeKeys = lastKeys.slice(1);
