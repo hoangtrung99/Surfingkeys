@@ -63,15 +63,15 @@ describe('background/tabSwitcher.js', () => {
         expect(sentTo()).toEqual([[7, {subject: 'paletteTypeAhead', text: 'fig', then: 'Enter', shift: false}]]);
     });
 
-    test('install opens the shortcuts page only when a shortcut is left unassigned', () => {
-        shortcuts = [{name: 'commandPalette', shortcut: 'Ctrl+Shift+K'}, {name: 'tabSwitcher', shortcut: 'Alt+Q'}, {name: 'nextTab', shortcut: ''}];
-        events.installed.fire({reason: 'install'});
-        expect(chrome.tabs.create).not.toHaveBeenCalled();
+    // The welcome page checks the shortcuts itself (pages/start.html#welcome), so
+    // install always opens it and never chrome://extensions/shortcuts directly
+    test('install opens the welcome page, an update opens nothing', () => {
         shortcuts = [{name: 'commandPalette', shortcut: ''}, {name: 'tabSwitcher', shortcut: 'Alt+Q'}];
         events.installed.fire({reason: 'update'});
         expect(chrome.tabs.create).not.toHaveBeenCalled();
         events.installed.fire({reason: 'install'});
-        expect(chrome.tabs.create).toHaveBeenCalledWith({url: 'chrome://extensions/shortcuts'});
+        expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+        expect(chrome.tabs.create.mock.calls[0][0].url).toMatch(/\/pages\/start\.html#welcome$/);
     });
 
     // Chrome leaves a suggested key it keeps for itself unassigned, with no word: on
