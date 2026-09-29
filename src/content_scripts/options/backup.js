@@ -25,6 +25,8 @@ export const KEY_LABELS = {
 
 const MAX_FILE = 5 * 1024 * 1024;
 
+const PROXY_KEYS = ['proxyMode', 'proxy', 'autoproxy_hosts'];
+
 function lineCount(text) {
     return text ? text.split('\n').length : 0;
 }
@@ -153,12 +155,16 @@ export default {
                 ? 'Settings copied with yj.'
                 : `Exported ${parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleString() : ''}${parsed.extensionVersion ? ` from Surfingkeys ${parsed.extensionVersion}` : ''}.`;
             const changes = diff.added.length + diff.changed.length;
+            const proxyChanges = diff.added.concat(diff.changed).some((k) => PROXY_KEYS.indexOf(k) !== -1);
+            const mode = parsed.settings.proxyMode || current.proxyMode || 'clear';
             const body = h('div', {id: 'importPreview'},
                 h('p', null, h('b', null, name), ' · ', from),
                 changes ? null : h('p', null, 'Nothing in this file differs from your settings.'),
                 keyList('New', diff.added),
                 keyList('Replaced', diff.changed),
                 keyList('Not in the file', diff.removed, 'kept as they are'),
+                proxyChanges ? h('p', {id: 'importProxyNote', class: 'sk-note sk-warn'},
+                    `This file changes the browser’s proxy (mode “${mode}”), for all your browsing, as soon as it is imported.`) : null,
                 parsed.ignored.length ? h('p', {class: 'sk-muted'}, `Not imported: ${parsed.ignored.join(', ')}.`) : null);
             ask({
                 id: 'importDialog',
@@ -206,17 +212,34 @@ export default {
         function apply(settings, withScript) {
             const s = ctx.settings || {};
             const plan = importPlan(settings, {withScript, userScriptsOff: !!s.isMV3 && !s.isUserScriptsAvailable});
-            const finish = (error) => {
-                const setTheme = plan.theme !== undefined;
-                if (setTheme) {
-                    RUNTIME('localData', {data: {paletteTheme: plan.theme}});
-                }
+            const done = (error) => {
                 ctx.refresh(() => {
                     let message = error || 'Settings imported';
                     if (!error && plan.advancedHeldBack) {
                         message = 'Settings imported. Advanced mode stays off until user scripts are allowed (see Advanced).';
                     }
                     ctx.announce(message, error || plan.advancedHeldBack ? 6000 : 2000);
+                });
+            };
+            // A refused write stores nothing, so the theme and the proxy stay as
+            // they are too. updateSettings only stores the proxy: the background
+            // applies it when told through updateProxy, from the stored settings
+            // the import has just merged into, or else at its next start.
+            const finish = (error) => {
+                if (error) {
+                    done(error);
+                    return;
+                }
+                if (plan.theme !== undefined) {
+                    RUNTIME('localData', {data: {paletteTheme: plan.theme}});
+                }
+                if (!PROXY_KEYS.some((k) => plan.settings.hasOwnProperty(k))) {
+                    done('');
+                    return;
+                }
+                RUNTIME('getSettings', {key: PROXY_KEYS}, (resp) => {
+                    const conf = (resp && resp.settings) || {};
+                    RUNTIME('updateProxy', {operation: 'set', mode: conf.proxyMode, proxy: conf.proxy, host: conf.autoproxy_hosts}, () => done(''));
                 });
             };
             if (Object.keys(plan.settings).length) {

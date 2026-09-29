@@ -187,6 +187,37 @@ describe('import', () => {
         expect(deps.showBanner).toHaveBeenLastCalledWith('Nope.', 6000);
     });
 
+    test('a refused import stores no theme either', async () => {
+        const {sent, local} = boot({hash: '#backup', stored: {paletteTheme: 'nord'}, reply: {updateSettings: () => ({error: 'Nope.'})}});
+        loadSettings({});
+        await pick(JSON.stringify(FILE));
+        await answer('importConfirm');
+        expect(local.paletteTheme).toBe('nord');
+        expect(sent.filter((m) => m.action === 'localData' && typeof m.args.data !== 'string')).toEqual([]);
+    });
+
+    test('says an imported proxy applies at once, and applies it from what is stored', async () => {
+        const proxy = {proxyMode: 'byhost', proxy: ['PROXY p.test:1'], autoproxy_hosts: [['a.test']]};
+        const {sent, deps} = boot({hash: '#backup', stored: {autoproxy_hosts: [['old.test']]}, reply: {updateProxy: () => ({})}});
+        loadSettings({});
+        await pick(JSON.stringify({format: 'surfingkeys-settings', version: 1, settings: proxy}));
+        expect(document.getElementById('importProxyNote').textContent).toContain('mode “byhost”');
+        await answer('importConfirm');
+        expect(writes(sent)).toEqual([proxy]);
+        expect(sent.filter((m) => m.action === 'updateProxy').map((m) => m.args))
+            .toEqual([{operation: 'set', mode: 'byhost', proxy: ['PROXY p.test:1'], host: [['a.test']]}]);
+        expect(deps.showBanner).toHaveBeenLastCalledWith('Settings imported', 2000);
+    });
+
+    test('has no proxy note or proxy change for a file without one', async () => {
+        const {sent} = boot({hash: '#backup'});
+        loadSettings({});
+        await pick(JSON.stringify(FILE));
+        expect(document.getElementById('importProxyNote')).toBeNull();
+        await answer('importConfirm');
+        expect(sent.filter((m) => m.action === 'updateProxy')).toEqual([]);
+    });
+
     test('refuses a broken file with a readable error, and opens nothing', async () => {
         const {sent} = boot({hash: '#backup'});
         loadSettings({});
