@@ -156,3 +156,52 @@ describe('page side, a document that cannot show the UI', () => {
         expect(host.command).toHaveBeenCalledWith(expect.objectContaining({action: 'openSwitcher'}));
     });
 });
+
+describe('page side, whether a panel is up', () => {
+    // a frontend host as uiframe.js builds it, its frame interactive
+    function uiHost() {
+        const el = document.createElement('div');
+        el.attachShadow({mode: 'open'});
+        const ifr = document.createElement('iframe');
+        ifr.className = 'sk_ui';
+        ifr.style.pointerEvents = 'all';
+        el.shadowRoot.appendChild(ifr);
+        return el;
+    }
+    function withFullscreen(el, run) {
+        Object.defineProperty(document, 'fullscreenElement', {configurable: true, get: () => el});
+        try {
+            run();
+        } finally {
+            delete document.fullscreenElement;
+        }
+    }
+    const visible = () => deliver({subject: 'tabSwitcherUiVisible'}).mock.calls[0][0].visible;
+
+    it('finds the host moved into the element in fullscreen', () => {
+        const player = document.createElement('div');
+        const host = uiHost();
+        player.appendChild(host);
+        document.body.appendChild(player);
+        try {
+            withFullscreen(player, () => expect(visible()).toBe(true));
+        } finally {
+            player.remove();
+        }
+    });
+
+    it('finds it in an element in fullscreen inside a shadow root', () => {
+        const player = document.createElement('x-player');
+        player.attachShadow({mode: 'open'});
+        const inner = document.createElement('div');
+        player.shadowRoot.appendChild(inner);
+        inner.appendChild(uiHost());
+        Object.defineProperty(player.shadowRoot, 'fullscreenElement', {get: () => inner});
+        document.body.appendChild(player);
+        try {
+            withFullscreen(player, () => expect(visible()).toBe(true));
+        } finally {
+            player.remove();
+        }
+    });
+});

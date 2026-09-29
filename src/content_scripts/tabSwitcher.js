@@ -34,9 +34,18 @@ function hasKeyboardFocus() {
     return document.hasFocus() && !(active && /^(IFRAME|FRAME)$/.test(active.tagName));
 }
 
+// Where the frontend host can be: under <html>, or moved into the element in
+// fullscreen (uiframe.js raise), which may sit in an open shadow root.
+function* uiHostCandidates() {
+    yield* document.documentElement.children;
+    for (let fs = document.fullscreenElement; fs; fs = fs.shadowRoot && fs.shadowRoot.fullscreenElement) {
+        yield* fs.children;
+    }
+}
+
 // The frontend frame is interactive (a panel, not just the status strip).
 function isPanelOpen() {
-    for (const el of document.documentElement.children) {
+    for (const el of uiHostCandidates()) {
         const frame = el.shadowRoot && el.shadowRoot.querySelector('iframe.sk_ui');
         if (frame) {
             return frame.style.pointerEvents === 'all';
