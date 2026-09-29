@@ -40,6 +40,7 @@ export default function createTabSwitcher(front, showElement) {
     let tabs = [], cards = [], selected = 0;
     let session = null, pendingCommit = false, pendingSteps = 0, lastPointer = null;
     let drawnAt = Infinity;  // when the cards went up, as performance.timeOrigin-based ms
+    let closedEarly = [];  // tabs closed while the list was on its way
 
     function select(i) {
         if (!cards.length) {
@@ -87,7 +88,9 @@ export default function createTabSwitcher(front, showElement) {
         }
     }
 
-    function card(tab, i) {
+    // A card looks its place up when it is used: cards before it go when their tabs
+    // close (drop), and a place fixed at render time would pick the wrong tab.
+    function card(tab) {
         const c = el('div', 'sk_switcher_card');
         c.setAttribute('role', 'option');
         c.dataset.tabId = tab.id;
@@ -102,20 +105,34 @@ export default function createTabSwitcher(front, showElement) {
         c.append(thumb, meta);
         c.addEventListener('mousemove', (e) => {
             // a strip appearing under a resting pointer must not steal the preselection
+            const i = cards.indexOf(c);
             if (lastPointer && (lastPointer[0] !== e.screenX || lastPointer[1] !== e.screenY) && selected !== i) {
                 select(i);
             }
             lastPointer = [e.screenX, e.screenY];
         });
         c.addEventListener('click', () => {
-            select(i);
+            select(cards.indexOf(c));
             commit();
         });
         return c;
     }
 
+    // A tab closed while the strip is up (from another window, or by itself). The
+    // selection stays at the same place, on the card that moves into it.
+    function drop(tabId) {
+        const i = tabs.findIndex((t) => t.id === tabId);
+        if (i === -1) {
+            closedEarly.push(tabId);  // a list asked for before it closed still holds it
+            return;
+        }
+        tabs.splice(i, 1);
+        cards.splice(i, 1)[0].remove();
+        select(i < selected || selected === cards.length ? selected - 1 : selected);
+    }
+
     function render(list, backward) {
-        tabs = list;
+        tabs = list.filter((t) => closedEarly.indexOf(t.id) === -1);
         cards = tabs.map(card);
         track.replaceChildren(...cards);
         select(tabs.length < 2 ? 0 : (backward ? tabs.length - 1 : 1) + pendingSteps);
@@ -193,6 +210,7 @@ export default function createTabSwitcher(front, showElement) {
         pendingSteps = 0;
         lastPointer = null;
         drawnAt = Infinity;
+        closedEarly = [];
         track.replaceChildren();
     };
 
@@ -205,7 +223,7 @@ export default function createTabSwitcher(front, showElement) {
         session = message.session;
         showElement(ui, () => {
             mode.enter(0, true);
-            RUNTIME('tabSwitcherTabs', {}, (resp) => {
+            RUNTIME('tabSwitcherTabs', {switcher: true}, (resp) => {
                 if (ui.style.display !== 'none' && session === message.session) {
                     render((resp && resp.tabs) || [], message.backward);
                 }
@@ -219,6 +237,11 @@ export default function createTabSwitcher(front, showElement) {
     runtime.on('tabSwitcherModifierUp', function(message) {
         if (session && message.session === session && ui.style.display !== 'none') {
             release(message.at);
+        }
+    });
+    runtime.on('tabSwitcherTabRemoved', function(message) {
+        if (session && ui.style.display !== 'none') {
+            drop(message.tabId);
         }
     });
 }

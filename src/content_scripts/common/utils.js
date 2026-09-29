@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import KeyboardUtils from './keyboardUtils';
 import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
+import { snippetsRevision } from '../../common/utils.js';
 
 const colors = [
     '#4169E1', // Royal Blue
@@ -159,10 +160,16 @@ function isEmptyObject(obj) {
     return true;
 }
 
+// `delta.snippets` is the text that ran, when known: the background keeps the error
+// for the settings page only while that text is still the saved snippet.
 function applyUserSettings(delta) {
     if (delta.error !== "") {
         if (window === top) {
             showPopup("[SurfingKeys] Error found in settings: " + delta.error);
+            RUNTIME('reportSnippetsError', {
+                error: delta.error,
+                rev: typeof delta.snippets === "string" ? snippetsRevision(delta.snippets) : undefined
+            });
         } else {
             console.log("[SurfingKeys] Error found in settings({0}): {1}".format(window.location.href, delta.error));
         }

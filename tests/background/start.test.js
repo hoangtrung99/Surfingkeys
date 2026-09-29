@@ -513,7 +513,7 @@ describe('start', () => {
             const {chrome, dispatch} = bootstrap();
             dispatch({action: 'focusTab', tabId: 21, windowId: 2}, senderFor(12));
             expect(chrome.windows.update).toHaveBeenCalledWith(2, {focused: true}, expect.any(Function));
-            expect(chrome.tabs.update).toHaveBeenCalledWith(21, {active: true});
+            expect(chrome.tabs.update).toHaveBeenCalledWith(21, {active: true}, expect.any(Function));
         });
     });
 
@@ -2594,7 +2594,7 @@ describe('start', () => {
             const {chrome, dispatch} = bootstrap();
             dispatch({action: 'focusTab', tabId: 11, windowId: 1}, senderFor(12));
             expect(chrome.windows.update).not.toHaveBeenCalled();
-            expect(chrome.tabs.update).toHaveBeenCalledWith(11, {active: true});
+            expect(chrome.tabs.update).toHaveBeenCalledWith(11, {active: true}, expect.any(Function));
         });
     });
 
@@ -2661,7 +2661,7 @@ describe('start', () => {
     describe('user script registration', () => {
         const snippetCode = (snippets) =>
             `import('./api.js').then((module) => {module.default("chrome-extension://surfingkeys/", ` +
-            `(api, settings) => {${snippets}\n})});`;
+            `${JSON.stringify(snippets)})});`;
 
         it('skips registration entirely when the API is unavailable', async () => {
             mockFetchText('snippets');

@@ -303,17 +303,21 @@ const api = {
     },
 };
 
-export default (extensionRootUrl, uf) => {
+// `snippets` is the source text, compiled here so that a syntax error in it is
+// caught and shown like any other error (see registerUserScript in the
+// background). A script registered by an older version hands over a function.
+export default (extensionRootUrl, snippets) => {
     EXTENSION_ROOT_URL = extensionRootUrl;
     if (isInUIFrame()) return;
     userScriptTask = () => {
         var settings = {}, error = "";
         try {
+            const uf = typeof snippets === "function" ? snippets : new Function('api', 'settings', snippets);
             uf(api, settings);
         } catch(e) {
             error = e.toString();
         }
-        applyUserSettings({settings, error});
+        applyUserSettings({settings, error, snippets: typeof snippets === "string" ? snippets : undefined});
     };
     if (window === top) {
         userScriptTask();

@@ -26,6 +26,9 @@ export default function installTabSwitcher(self, _response) {
     const memThumbs = new Map();  // used only when storage.session is missing
     const shotInfo = new Map();   // tabId -> {url, at} of the stored thumbnail
     let mru = [];
+    // The tab whose switcher asked for the tab list last. The strip closes when its
+    // window loses focus, so only one can be open at a time.
+    let switcherTab = null;
     let restored = !session;
     const waiting = [];
     // closed while the stored list was still being read: it must not come back with it
@@ -86,9 +89,11 @@ export default function installTabSwitcher(self, _response) {
         // More than one frame can believe it holds the focus (an iframe inside a
         // shadow root), so the top frame acts once per cmdId: a second open of the
         // same press would close the palette again or move the switcher one tab on.
+        // No content script to answer, or one in a page that cannot show the UI
+        // (no <body> yet, an SVG or XML document): the switcher falls back the same way.
         const cmdId = `${Date.now()}:${++commandSeq}`;
-        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command], cmdId}, () => {
-            if (chrome.runtime.lastError && command === 'tabSwitcher') {
+        const send = (t) => chrome.tabs.sendMessage(t.id, {subject: 'tabSwitcherCommand', action: COMMANDS[command], cmdId}, (resp) => {
+            if ((chrome.runtime.lastError || (resp && resp.shown === false)) && command === 'tabSwitcher') {
                 switchToPrevious(t);
             }
         });
@@ -145,6 +150,12 @@ export default function installTabSwitcher(self, _response) {
         }
     });
     chrome.tabs.onRemoved.addListener((tabId) => {
+        // the open switcher still shows a card for it, and switching there would do nothing
+        if (switcherTab !== null && switcherTab !== tabId) {
+            chrome.tabs.sendMessage(switcherTab, {subject: 'tabSwitcherTabRemoved', tabId}, () => void chrome.runtime.lastError);
+        } else if (switcherTab === tabId) {
+            switcherTab = null;
+        }
         restored || removedEarly.add(tabId);
         mru = mru.filter((id) => id !== tabId);
         memThumbs.delete(tabId);
@@ -198,14 +209,19 @@ export default function installTabSwitcher(self, _response) {
                         if (chrome.runtime.lastError || !now || !now.active || now.url !== tab.url) {
                             return;
                         }
-                        shrink(dataUrl).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
+                        shrink(dataUrl, now.width).then((thumb) => store(tabId, {thumb, url: tab.url, at: Date.now()})).catch(() => {});
                     });
                 });
             });
         });
     }
-    function shrink(dataUrl) {
-        return fetch(dataUrl).then((r) => r.blob()).then((blob) => createImageBitmap(blob)).then((img) => {
+    // `tabWidth` is in CSS pixels, and the capture has at least that many: from
+    // THUMB_WIDTH up, decoding straight to the thumbnail's size skips the full-size
+    // bitmap (15 MB for a 1280px window at DPR 2). Below it, that would upscale.
+    function shrink(dataUrl, tabWidth) {
+        return fetch(dataUrl).then((r) => r.blob()).then((blob) => {
+            return tabWidth >= THUMB_WIDTH ? createImageBitmap(blob, {resizeWidth: THUMB_WIDTH, resizeQuality: 'medium'}) : createImageBitmap(blob);
+        }).then((img) => {
             const scale = Math.min(1, THUMB_WIDTH / img.width);
             const canvas = new OffscreenCanvas(Math.round(img.width * scale), Math.round(img.height * scale));
             canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -265,12 +281,15 @@ export default function installTabSwitcher(self, _response) {
             if (currentId !== -1 && mru[0] !== currentId) {
                 touch(currentId);
             }
+            if (message.switcher && currentId !== -1) {
+                switcherTab = currentId;
+            }
+            const pos = new Map(mru.map((id, i) => [id, i]));  // touch() keeps ids unique
             const rank = (t) => {
                 if (t.id === currentId) {
                     return -1;
                 }
-                const i = mru.indexOf(t.id);
-                return i === -1 ? Infinity : i;
+                return pos.has(t.id) ? pos.get(t.id) : Infinity;
             };
             tabs.sort((a, b) => (rank(a) - rank(b)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
             const currentWindow = sender.tab ? sender.tab.windowId : -1;

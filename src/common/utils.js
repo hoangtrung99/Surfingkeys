@@ -44,10 +44,23 @@ const NATIVE_LOCAL_PATH = "<native>";
 // routes to its containing app, so a wrong name is only noticed off Safari.
 const NATIVE_HOST_NAME = "surfingkeys";
 
+// A fingerprint of the settings snippet (FNV-1a and the length). A page reports an
+// error in the snippet with it, and the background shows that error only while the
+// saved snippet has the same one: a tab still running an older snippet must not
+// report an error the user has already fixed.
+function snippetsRevision(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+        h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+    }
+    return (h >>> 0).toString(36) + "." + text.length;
+}
+
 export {
     LOG,
     NATIVE_HOST_NAME,
     NATIVE_LOCAL_PATH,
     filterByTitleOrUrl,
     regexFromString,
+    snippetsRevision,
 }

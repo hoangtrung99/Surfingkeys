@@ -2,6 +2,7 @@ import {
     NATIVE_HOST_NAME,
     NATIVE_LOCAL_PATH,
     filterByTitleOrUrl,
+    snippetsRevision,
 } from '../common/utils.js';
 import llmClients from './llm.js';
 
@@ -1062,13 +1063,19 @@ function start(browser) {
     self.closeTabByIds = function(message, sender, sendResponse) {
         chrome.tabs.remove(message.tabIds);
     };
+    // The tab or its window may have closed since the caller listed it: reading
+    // lastError keeps that failure off the extension's error page.
+    function ignoreGone() {
+        void chrome.runtime.lastError;
+    }
     function focusTab(windowId, tabId) {
         chrome.windows.update(windowId, {
             focused: true
         }, function() {
+            ignoreGone();
             chrome.tabs.update(tabId, {
                 active: true
-            });
+            }, ignoreGone);
         });
     }
     self.focusTab = function(message, sender, sendResponse) {
@@ -1077,7 +1084,7 @@ function start(browser) {
         } else {
             chrome.tabs.update(message.tabId, {
                 active: true
-            });
+            }, ignoreGone);
         }
     };
     self.focusTabByIndex = function(message, sender, sendResponse) {
@@ -1533,8 +1540,18 @@ function start(browser) {
                     callback && callback();
                     return;
                 }
-                const code = `import('./api.js').then((module) => {module.default("${chrome.runtime.getURL("/")}", (api, settings) => {${snippets}\n})});`;
+                // The snippet goes in as a string that api.js compiles inside its
+                // try: pasted in as code, a syntax error in it stops this whole script
+                // from parsing, so no setting applies and nothing says why.
+                const code = `import('./api.js').then((module) => {module.default("${chrome.runtime.getURL("/")}", ${JSON.stringify(snippets)})});`;
                 const registerSettingSnippets = () => {
+                    // compiling it takes 'unsafe-eval' in the world, which is otherwise
+                    // configured only at install and when advanced mode is switched on,
+                    // so not when "Allow User Scripts" was turned on in between
+                    chrome.userScripts.configureWorld({
+                        csp: 'script-src \'self\' \'unsafe-eval\'',
+                        messaging: true
+                    });
                     chrome.userScripts.register([{
                         allFrames: true,
                         id: userScriptId,
@@ -1587,6 +1604,34 @@ function start(browser) {
             callback && callback();
         }
     }
+    // The last error the settings snippet threw in a page, for the settings page,
+    // which runs no snippet itself and would otherwise never learn of it. In
+    // storage.session where there is one: the worker is stopped between pages.
+    const SNIPPETS_ERROR_KEY = 'snippetsError';
+    let snippetsError = null;
+    self.reportSnippetsError = function(message, sender) {
+        const entry = {
+            error: String(message.error).slice(0, 1000),
+            rev: message.rev,
+            url: sender.tab ? sender.tab.url : sender.url,
+            at: Date.now(),
+        };
+        if (chrome.storage.session) {
+            chrome.storage.session.set({[SNIPPETS_ERROR_KEY]: entry}, () => void chrome.runtime.lastError);
+        } else {
+            snippetsError = entry;
+        }
+    };
+    // Only an error from the snippet that is saved now: an older one is fixed.
+    function readSnippetsError(snippets, cb) {
+        const pick = (entry) => cb(entry && entry.rev === snippetsRevision(snippets)
+            ? {error: entry.error, url: entry.url, at: entry.at} : null);
+        if (chrome.storage.session) {
+            chrome.storage.session.get(SNIPPETS_ERROR_KEY, (r) => pick(!chrome.runtime.lastError && r && r[SNIPPETS_ERROR_KEY]));
+        } else {
+            pick(snippetsError);
+        }
+    }
     self.getSettings = function(message, sender, sendResponse) {
         var pf = loadSettings;
         if (message.key === "RAW") {
@@ -1596,6 +1641,21 @@ function start(browser) {
         pf(message.key, function(data) {
             if (message.key === undefined) {
                 onFullSettingsRequested(data);
+                // only the settings page shows it: every other frame would wait on
+                // storage for it and learn another tab's URL
+                const fromOptions = typeof sender.url === "string"
+                    && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL("pages/options.html");
+                if (fromOptions && data.showAdvanced && data.snippets) {
+                    readSnippetsError(data.snippets, (error) => {
+                        if (error) {
+                            data.snippetsError = error;
+                        }
+                        _response(message, sendResponse, {
+                            settings: data
+                        });
+                    });
+                    return;
+                }
             }
 
             _response(message, sendResponse, {

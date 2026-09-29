@@ -1,4 +1,5 @@
 import { LOG } from '../common/utils.js';
+import Mode from './common/mode.js';
 import { runtime } from './common/runtime.js';
 import {
     getBrowserName,
@@ -86,6 +87,104 @@ function createUiHost(browser, onload) {
 
     var lastStateOfPointerEvents = "none", _origOverflowY;
     var _actions = {}, activeContent = null;
+
+    // An element in fullscreen (a video player) is drawn in the top layer, above this
+    // host: a panel opened under it takes the keys while nobody can see it, and the
+    // switcher would switch to a tab the user never saw. So while the frame is
+    // interactive it goes where it shows, and the page stays in fullscreen: into the
+    // fullscreen element when that draws it (moveBefore keeps the frame loaded,
+    // where a plain move would reload it), else into the top layer as a popover,
+    // which Chrome draws above the fullscreen element but does not hit-test, so keys
+    // reach the frame and a click reaches the page.
+    // document.fullscreenElement is retargeted: when the element really in fullscreen
+    // sits in a shadow root it names the shadow host, whose slotted children are laid
+    // out yet drawn outside the top layer. So the move aims at the innermost element
+    // an open shadow root names, and it stands only if a hit test at the frame lands
+    // on the frame, which a frame drawn under the top layer never gets.
+    var raisedAs = null, hostStyle = "";
+    function innermostFullscreenElement() {
+        var fs = document.fullscreenElement;
+        while (fs && fs.shadowRoot && fs.shadowRoot.fullscreenElement) {
+            fs = fs.shadowRoot.fullscreenElement;
+        }
+        return fs;
+    }
+    function hitsFrame() {
+        var r = ifr.getBoundingClientRect();
+        var x = Math.min(Math.max(r.left + r.width / 2, 0), window.innerWidth - 1),
+            y = Math.min(Math.max(r.top + r.height / 2, 0), window.innerHeight - 1);
+        var root = uiHost.getRootNode();
+        return r.width > 0 && r.height > 0 && !!root.elementFromPoint && root.elementFromPoint(x, y) === uiHost;
+    }
+    function raise() {
+        var fs = innermostFullscreenElement();
+        if (raisedAs || !fs || fs.contains(uiHost)) {
+            return;
+        }
+        // children of a replaced element are never drawn, nor those of a shadow host
+        // that does not slot them
+        if (fs.moveBefore && !/^(VIDEO|AUDIO|IFRAME|FRAME|IMG|CANVAS|EMBED|OBJECT)$/.test(fs.tagName)) {
+            try {
+                fs.moveBefore(uiHost, null);
+                raisedAs = "moved";
+            } catch (e) {
+                // not a place it can go: the popover below
+            }
+            if (raisedAs && hitsFrame()) {
+                return;
+            }
+            lower();
+        }
+        if (uiHost.showPopover) {
+            hostStyle = uiHost.style.cssText;
+            uiHost.popover = "manual";
+            // undo the UA's popover box, a bordered and padded square in mid screen
+            Object.assign(uiHost.style, {position: "fixed", inset: "auto", width: "0", height: "0", margin: "0",
+                border: "0", padding: "0", overflow: "visible", background: "transparent"});
+            uiHost.showPopover();
+            raisedAs = "popover";
+        }
+    }
+    function lower() {
+        if (raisedAs === "moved" && uiHost.isConnected && uiHost.parentNode !== document.documentElement) {
+            document.documentElement.moveBefore(uiHost, null);
+        } else if (raisedAs === "popover") {
+            uiHost.matches(":popover-open") && uiHost.hidePopover();
+            uiHost.removeAttribute("popover");
+            uiHost.style.cssText = hostStyle;
+        }
+        raisedAs = null;
+    }
+    // entering fullscreen also hides every popover
+    function onFullscreenChange() {
+        lower();
+        if (lastStateOfPointerEvents !== "none") {
+            raise();
+        }
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+
+    // Reloading or updating the extension kills the frontend but leaves this page as
+    // it was: a panel open then stays a dead frame over the whole page that takes
+    // every click until the page is reloaded (Mode.isOrphaned gives the keys back,
+    // not the mouse). Watched only while a panel is open.
+    var orphanWatch = null;
+    function watchOrphan(on) {
+        clearInterval(orphanWatch);
+        orphanWatch = on ? setInterval(function() {
+            if (Mode.isOrphaned()) {
+                clearInterval(orphanWatch);
+                window.removeEventListener('message', _onWindowMessage, true);
+                document.removeEventListener("fullscreenchange", onFullscreenChange);
+                uiHost.remove();
+                if (document.body) {
+                    document.body.style.animationFillMode = "";
+                    document.body.style.overflowY = _origOverflowY;
+                }
+            }
+        }, 500) : null;
+    }
+
     _actions['initFrontendAck'] = function(response) {
         onload(uiHost);
     };
@@ -95,6 +194,8 @@ function createUiHost(browser, onload) {
             ifr.style.pointerEvents = response.pointerEvents;
         }
         if (response.pointerEvents === "none") {
+            lower();
+            watchOrphan(false);
             uiHost.blur();
             ifr.blur();
             // test with https://docs.google.com/ and https://web.whatsapp.com/
@@ -112,6 +213,8 @@ function createUiHost(browser, onload) {
                 document.body.style.overflowY = _origOverflowY;
             }
         } else {
+            raise();
+            watchOrphan(true);
             if (browser.focusFrontend) {
                 browser.focusFrontend(ifr);
             }
@@ -139,6 +242,8 @@ function createUiHost(browser, onload) {
                 action: 'frontendDestroyed',
             }});
             window.removeEventListener('message', _onWindowMessage, true);
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            watchOrphan(false);
             uiHost.remove();
         } else {
             LOG("warn", "frontend in use");

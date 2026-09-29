@@ -35,9 +35,18 @@ function hasKeyboardFocus() {
     return document.hasFocus() && !(active && /^(IFRAME|FRAME)$/.test(active.tagName));
 }
 
+// Where the frontend host can be: under <html>, or moved into the element in
+// fullscreen (uiframe.js raise), which may sit in an open shadow root.
+function* uiHostCandidates() {
+    yield* document.documentElement.children;
+    for (let fs = document.fullscreenElement; fs; fs = fs.shadowRoot && fs.shadowRoot.fullscreenElement) {
+        yield* fs.children;
+    }
+}
+
 // The frontend frame is interactive (a panel, not just the status strip).
 function isPanelOpen() {
-    for (const el of document.documentElement.children) {
+    for (const el of uiHostCandidates()) {
         const frame = el.shadowRoot && el.shadowRoot.querySelector('iframe.sk_ui');
         if (frame) {
             return frame.style.pointerEvents === 'all';
@@ -180,6 +189,14 @@ if (window === top) {
 // when focus is outside the page (address bar), or when the focused subframe
 // has no content script to answer.
 runtime.on('tabSwitcherCommand', (msg, sender, response) => {
+    // The frontend frame is made only once there is a <body> (front.js), which an
+    // SVG image or an XML feed never has, and a page still loading its <head> not
+    // yet. Nothing would show, so the background falls back as it does where no
+    // content script answers, and no keys are held for a palette that never opens.
+    if (window === top && (!host || !document.body)) {
+        response({shown: false});
+        return;
+    }
     response({});  // tells the background a content script is here
     if (hasKeyboardFocus()) {
         start(msg.action, altHeld, false, msg.cmdId);
