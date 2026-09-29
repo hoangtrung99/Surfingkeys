@@ -258,8 +258,8 @@ const api = {
         feedkeys: (keys) => {
             dispatchSKEvent('api', ['normal:feedkeys', keys]);
         },
-        jumpVIMark: (mark) => {
-            dispatchSKEvent('api', ['normal:jumpVIMark', mark]);
+        jumpVIMark: (mark, newTab) => {
+            dispatchSKEvent('api', ['normal:jumpVIMark', mark, newTab]);
         },
         passThrough: (timeout) => {
             dispatchSKEvent('api', ['normal:passThrough', timeout]);

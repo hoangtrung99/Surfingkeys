@@ -260,7 +260,7 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
     mapkey('m', '#10Add current URL to vim-like marks', normal.addVIMark);
     mapkey("'", '#10Jump to vim-like mark', normal.jumpVIMark);
     mapkey("<Ctrl-'>", '#10Jump to vim-like mark in new tab.', function(mark) {
-        normal.jumpVIMark(mark);
+        normal.jumpVIMark(mark, true);
     });
 
     mapkey('w', '#2Switch frames', function() {

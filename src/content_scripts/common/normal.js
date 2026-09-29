@@ -718,10 +718,11 @@ function createNormal(insert) {
      * Jump to a vim-like mark.
      *
      * @param {string} mark a vim-like mark.
+     * @param {boolean} [newTab] open the marked URL in a new tab, even when a tab already shows it.
      * @name Normal.jumpVIMark
      *
      */
-    self.jumpVIMark = function(mark) {
+    self.jumpVIMark = function(mark, newTab) {
         if (mark === "'") {
             let scrollNode = document.scrollingElement;
             initScrollIndex();
@@ -737,9 +738,13 @@ function createNormal(insert) {
                 }
             }
         } else {
-            RUNTIME('jumpVIMark', {
-                mark: mark
-            });
+            const args = {mark: mark};
+            // only a new tab says so: without it the background switches to a tab
+            // already showing the mark, which is what ' does
+            if (newTab) {
+                args.newTab = true;
+            }
+            RUNTIME('jumpVIMark', args);
         }
     };
 

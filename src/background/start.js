@@ -784,7 +784,9 @@ function start(browser) {
                         return t.url === markInfo.url;
                     });
 
-                    if (tabs.length === 0) {
+                    // newTab (<Ctrl-'>) opens a tab even when one shows the mark already;
+                    // switching to that tab instead would make it the same as '
+                    if (tabs.length === 0 || message.newTab) {
                         markInfo.tab = {
                             tabbed: true,
                             active: true

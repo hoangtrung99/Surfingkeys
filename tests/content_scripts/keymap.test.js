@@ -226,9 +226,9 @@ describe('marks', () => {
         expect(h.ui('showBanner')).toEqual([expect.objectContaining({ content: `Mark 'b' added for: ${PAGE_URL}.` })]);
     });
 
-    // known bug ctrl-quote-mark-same-tab: "Jump to vim-like mark in new tab"
-    // sends the very request ' sends, and the background reuses an open tab for both
-    test.failing("<Ctrl-'> asks for a mark in a new tab, unlike '", () => {
+    // "Jump to vim-like mark in new tab" must ask for one: the background reuses
+    // an open tab for a request like the one ' sends
+    test("<Ctrl-'> asks for a mark in a new tab, unlike '", () => {
         h.press("'a");
         const [sameTab] = requests();
         h.chrome.runtime.sendMessage.mockClear();

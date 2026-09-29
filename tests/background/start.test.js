@@ -766,6 +766,17 @@ describe('start', () => {
                 expect.any(Function));
         });
 
+        it('opens a new tab for newTab even when a tab holds the marked url', () => {
+            const {chrome, dispatch} = bootstrap({
+                browser: {settings: {marks: {a: {url: 'https://a.example/'}}}},
+            });
+            dispatch({action: 'jumpVIMark', mark: 'a', newTab: true}, senderFor(12));
+            expect(chrome.tabs.update).not.toHaveBeenCalled();
+            expect(chrome.tabs.create).toHaveBeenCalledWith(
+                expect.objectContaining({url: 'https://a.example/', active: true}),
+                expect.any(Function));
+        });
+
         it('does nothing for an unknown mark', () => {
             const {chrome, dispatch} = bootstrap({browser: {settings: {marks: {}}}});
             dispatch({action: 'jumpVIMark', mark: 'zz'}, senderFor(12));
