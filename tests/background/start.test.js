@@ -836,6 +836,42 @@ describe('start', () => {
                 expect(sendResponse).toHaveBeenCalledWith({error: ''});
             });
 
+            it('replies with the error when the snippet cannot be registered', () => {
+                const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+                const {chrome, dispatch, stored} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'old'}}});
+                chrome.userScripts.register = jest.fn((scripts, cb) => {
+                    chrome.runtime.lastError = {message: 'Script with ID settingsSnippets already exists'};
+                    cb();
+                    chrome.runtime.lastError = undefined;
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {snippets: 'new', localPath: ''},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({snippets: 'new'});
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Script with ID settingsSnippets already exists')});
+                error.mockRestore();
+            });
+
+            it('replies with the error when the snippet cannot be unregistered', () => {
+                const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+                const {chrome, dispatch} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'code'}}});
+                chrome.userScripts.getScripts = jest.fn((filter, cb) => cb([{id: 'settingsSnippets', js: [{code: 'code'}]}]));
+                chrome.userScripts.unregister = jest.fn((filter, cb) => {
+                    chrome.runtime.lastError = {message: 'unregister failed'};
+                    cb();
+                    chrome.runtime.lastError = undefined;
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {showAdvanced: false},
+                }, senderFor(12));
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('unregister failed')});
+                error.mockRestore();
+            });
+
             it('leaves user scripts alone for settings that are neither', () => {
                 const {chrome, dispatch} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'code'}}});
                 const {sendResponse} = dispatch({
@@ -2844,7 +2880,7 @@ describe('start', () => {
                 settings: {showAdvanced: true, snippets: 'x'},
             }, senderFor(12));
             expect(error).toHaveBeenCalledWith(expect.stringContaining('getScripts'), expect.anything());
-            expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('nope')});
             error.mockRestore();
         });
 

@@ -1520,23 +1520,28 @@ function start(browser) {
         message.url = 'view-source:' + sender.tab.url;
         self.openLink(message, sender, sendResponse);
     };
+    // callback(error): error is the userScripts API's message, or "" when the
+    // registered script now matches `snippets`
     function registerUserScript(snippets, callback) {
         if (!isUserScriptsAvailable()) {
-            callback && callback();
+            callback && callback("");
             return;
         }
         const userScriptId = "settingsSnippets";
+        const lastErrorMessage = () => chrome.runtime.lastError.message || String(chrome.runtime.lastError);
         const invokeCallback = () => {
+            let error = "";
             if (chrome.runtime.lastError) {
                 console.error("userScripts API error:", chrome.runtime.lastError);
+                error = lastErrorMessage();
             }
-            callback && callback();
+            callback && callback(error);
         };
         if (snippets) {
             chrome.userScripts.getScripts({ids:[userScriptId]}, (r) => {
                 if (chrome.runtime.lastError) {
                     console.error("userScripts.getScripts error:", chrome.runtime.lastError);
-                    callback && callback();
+                    callback && callback(lastErrorMessage());
                     return;
                 }
                 const code = `import('./api.js').then((module) => {module.default("${chrome.runtime.getURL("/")}", (api, settings) => {${snippets}\n})});`;
@@ -1552,7 +1557,7 @@ function start(browser) {
                     if (r[0].js[0].code !== code) {
                         chrome.userScripts.unregister({ids:[userScriptId]}, registerSettingSnippets);
                     } else {
-                        callback && callback();
+                        callback && callback("");
                     }
                 } else {
                     registerSettingSnippets();
@@ -1562,13 +1567,13 @@ function start(browser) {
             chrome.userScripts.getScripts({ids:[userScriptId]}, (r) => {
                 if (chrome.runtime.lastError) {
                     console.error("userScripts.getScripts error:", chrome.runtime.lastError);
-                    callback && callback();
+                    callback && callback(lastErrorMessage());
                     return;
                 }
                 if (r.length > 0) {
                     chrome.userScripts.unregister({ids:[userScriptId]}, invokeCallback);
                 } else {
-                    callback && callback();
+                    callback && callback("");
                 }
             });
         }
@@ -1635,8 +1640,11 @@ function start(browser) {
             loadSettings(['showAdvanced', 'snippets'], function(stored) {
                 const on = saved.hasOwnProperty('showAdvanced') ? saved.showAdvanced : stored.showAdvanced;
                 const snippets = saved.hasOwnProperty('snippets') ? saved.snippets : stored.snippets;
-                registerUserScript(on ? snippets : null, () => {
-                    _response(message, sendResponse, { error: "" });
+                // stored either way, but a page opened now would not run it
+                registerUserScript(on ? snippets : null, (error) => {
+                    _response(message, sendResponse, {
+                        error: error ? "Saved, but the settings script could not be registered: " + error : ""
+                    });
                 });
             });
         });

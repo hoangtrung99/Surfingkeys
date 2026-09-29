@@ -223,7 +223,7 @@ export default {
                     saving = false;
                     saveButton.disabled = false;
                     if (resp && resp.error) {
-                        setStatus('Not saved');
+                        setStatus('Failed');
                         ctx.announce(resp.error, 5000);
                     } else {
                         shownSnippets = settingsCode;
