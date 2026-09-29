@@ -1,0 +1,85 @@
+body {
+    width: 320px;
+    margin: 0;
+    padding: 12px 14px 10px;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* until the theme's colours are in (popup.js), so it never opens in the wrong ones */
+body:not(.sk_ready) {
+    visibility: hidden;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+#version {
+    color: var(--overlay);
+    font-size: 12px;
+}
+
+section {
+    padding: 8px 0 10px;
+    border-top: 1px solid var(--s0);
+}
+section.switches {
+    padding: 4px 0 6px;
+}
+h2 {
+    margin: 0 0 8px;
+    color: var(--sub);
+    font-size: 12px;
+    font-weight: 600;
+}
+h2 .sk_note {
+    margin-left: 6px;
+}
+
+#siteLabel {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+dl {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 6px 12px;
+    margin: 0 0 8px;
+}
+dd {
+    margin: 0;
+}
+#inPageNote {
+    margin: -2px 0 8px;
+}
+
+nav {
+    padding-top: 6px;
+    border-top: 1px solid var(--s0);
+}
+nav p {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 14px;
+    margin: 0;
+}
+nav a {
+    padding: 4px 0;
+    color: var(--accent-text);
+    text-decoration: none;
+}
+nav a:hover {
+    text-decoration: underline;
+}
