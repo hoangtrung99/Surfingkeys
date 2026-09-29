@@ -756,6 +756,29 @@ describe('start', () => {
                 11, {subject: 'setScrollPos', scrollLeft: undefined, scrollTop: 240}, {frameId: 0});
         });
 
+        it('scrolls a loaded tab holding the mark at once', () => {
+            const {chrome, dispatch} = bootstrap({
+                browser: {settings: {marks: {a: {url: 'https://a.example/', scrollTop: 240}}}},
+                chrome: {tabs: TABS.map((t) => ({...t, status: 'complete'}))},
+            });
+            dispatch({action: 'jumpVIMark', mark: 'a'}, senderFor(12));
+            expect(chrome.tabs.update).toHaveBeenCalledWith(11, {active: true});
+            expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+                11, {subject: 'setScrollPos', scrollLeft: undefined, scrollTop: 240}, {frameId: 0});
+        });
+
+        it('keeps the offset for a discarded tab until it loads', () => {
+            const {chrome, dispatch} = bootstrap({
+                browser: {settings: {marks: {a: {url: 'https://a.example/', scrollTop: 240}}}},
+                chrome: {tabs: TABS.map((t) => ({...t, status: 'unloaded', discarded: true}))},
+            });
+            dispatch({action: 'jumpVIMark', mark: 'a'}, senderFor(12));
+            expect(chrome.tabs.sendMessage).not.toHaveBeenCalledWith(11, expect.objectContaining({subject: 'setScrollPos'}), expect.anything());
+            dispatch({action: 'tabURLAccessed', url: 'https://a.example/', title: 'A'}, senderFor(11));
+            expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+                11, {subject: 'setScrollPos', scrollLeft: undefined, scrollTop: 240}, {frameId: 0});
+        });
+
         it('opens a new tab when no tab holds the marked url', () => {
             const {chrome, dispatch} = bootstrap({
                 browser: {settings: {marks: {a: {url: 'https://gone.example/'}}}},

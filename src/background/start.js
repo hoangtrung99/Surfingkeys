@@ -809,6 +809,12 @@ function start(browser) {
                             chrome.tabs.update(tabs[0].id, {
                                 active: true
                             });
+                            // A loaded tab reports no url again, so the queued offset
+                            // would wait for its next load: send it now. A discarded or
+                            // loading tab gets it when it reports its url (tabURLAccessed).
+                            if (!tabs[0].discarded && tabs[0].status === "complete") {
+                                _setScrollPos_bg(tabs[0].id);
+                            }
                         }
                     }
                 });
