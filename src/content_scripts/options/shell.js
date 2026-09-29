@@ -48,6 +48,19 @@ export default function createSettingsPage(deps) {
     const modeChip = document.getElementById('settingsMode');
     const tokens = document.getElementById('sk_settings_tokens');
 
+    // settings.css keeps focused controls this far below the top, clear of the
+    // sticky header
+    const header = document.querySelector('.sk-header');
+    function headerHeight() {
+        document.documentElement.style.setProperty('--sk-header-h', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+    }
+    if (header) {
+        headerHeight();
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(headerHeight).observe(header);
+        }
+    }
+
     const version = chrome.runtime.getManifest().version;
     document.getElementById('settingsVersion').textContent = version ? `v${version}` : '';
 

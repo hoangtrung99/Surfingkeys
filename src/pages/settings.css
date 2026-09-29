@@ -23,7 +23,9 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { background: var(--mantle); }
+/* Focus scrolls clear of the sticky header: shell.js sets --sk-header-h from
+   its measured height, which grows when the header wraps. */
+html { background: var(--mantle); scroll-padding-top: calc(var(--sk-header-h, 61px) + 12px); }
 body {
   margin: 0; background: var(--mantle); color: var(--text);
   font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased;
