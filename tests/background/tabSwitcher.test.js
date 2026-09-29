@@ -249,7 +249,17 @@ describe('browser shortcuts', () => {
     ])('%s asks the tab\'s frames to %s', (name, action) => {
         install();
         command(name, chrome.state.tabs[1]);
-        expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(2, { subject: 'tabSwitcherCommand', action }, expect.any(Function));
+        expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(2, { subject: 'tabSwitcherCommand', action, cmdId: expect.any(String) }, expect.any(Function));
+    });
+
+    test('each press carries its own cmdId, the same to every frame of the tab', () => {
+        install();
+        command('commandPalette', chrome.state.tabs[1]);
+        command('commandPalette', chrome.state.tabs[1]);
+        const ids = toPage('tabSwitcherCommand').map((c) => c[1].cmdId);
+        expect(ids).toHaveLength(2);
+        ids.forEach((id) => expect(id).toMatch(/\S/));
+        expect(ids[0]).not.toBe(ids[1]);
     });
 
     test('without a tab, the active tab of the last focused window', () => {
@@ -311,10 +321,11 @@ describe('browser shortcuts', () => {
         });
     });
 
+    // the welcome page reports an unassigned shortcut and opens chrome://extensions/shortcuts itself
     test.each([
-        ['install with a shortcut left unassigned opens the shortcuts page', 'install', '', 1],
-        ['install with both assigned does nothing', 'install', 'Alt+Q', 0],
-        ['an update does nothing', 'update', '', 0],
+        ['install with a shortcut left unassigned opens the welcome page', 'install', '', 1],
+        ['install with both assigned opens the welcome page too', 'install', 'Alt+Q', 1],
+        ['an update opens nothing', 'update', '', 0],
     ])('%s', (name, reason, switcherKey, pages) => {
         install();
         chrome.commands.getAll = jest.fn((cb) => cb([
@@ -322,7 +333,8 @@ describe('browser shortcuts', () => {
             { name: 'tabSwitcher', shortcut: switcherKey },
         ]));
         chrome.runtime.onInstalled.fire({ reason });
-        expect(chrome.tabs.create.mock.calls.filter((c) => c[0].url === 'chrome://extensions/shortcuts')).toHaveLength(pages);
+        const opened = chrome.tabs.create.mock.calls.map((c) => c[0].url);
+        expect(opened).toEqual(Array(pages).fill('chrome-extension://surfingkeys/pages/start.html#welcome'));
     });
 });
 
@@ -604,10 +616,17 @@ describe('relays', () => {
         expect(toPage('tabSwitcherModifierUp')).toEqual([[4, { subject: 'tabSwitcherModifierUp', session: 's1', at: 9 }, expect.any(Function)]]);
     });
 
+    test('the top frame\'s typed-ahead keys go to the tab as paletteTypeAhead (the frontend takes them)', () => {
+        install();
+        ask('tabSwitcherPaletteTypeAhead', { text: 'ab', then: 'Enter', shift: true }, { tab: { id: 4 }, frameId: 0 });
+        expect(toPage('paletteTypeAhead')).toEqual([[4, { subject: 'paletteTypeAhead', text: 'ab', then: 'Enter', shift: true }, expect.any(Function)]]);
+    });
+
     test('without a sender tab nothing is sent', () => {
         install();
         ask('tabSwitcherRelay', { data: {} }, {});
         ask('tabSwitcherModifierUp', { session: 's1', at: 9 }, {});
+        ask('tabSwitcherPaletteTypeAhead', { text: 'ab', then: 'Enter' }, {});
         expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
     });
 });

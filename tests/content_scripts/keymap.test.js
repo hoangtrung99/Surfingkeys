@@ -138,17 +138,22 @@ describe('keys that ask the UI', () => {
         ]));
     });
 
-    test.each(['<Ctrl-P>', '<Meta-P>'])('%s opens the palette and hands it the keys typed right after', (keys) => {
-        h.press(keys);
-        expect(uiRequests()).toEqual([expect.objectContaining({ action: 'togglePalette' })]);
-        h.press('x');
+    test.each(['<Ctrl-P>', '<Meta-P>'])('%s opens the palette and hands it the keys typed right after', async (keys) => {
+        // typed by the user: keys the page dispatches are never held
+        h.press(keys, { trusted: true });
+        // a trusted key also shows and hides the keystroke popup
+        expect(uiRequests().filter((a) => !/Keystroke$/.test(a.action))).toEqual([expect.objectContaining({ action: 'togglePalette' })]);
+        h.press('x', { trusted: true });
         // focus leaving the page ends the hold at once, instead of after 500 ms
         window.dispatchEvent(new Event('blur'));
+        // handed over once the frontend is up (front.afterCommands)
+        await h.settle();
         expect(requests().filter((m) => m.action === 'closeTab')).toEqual([]);
-        // by the UI host today; whether it should go through the background
-        // instead is page-drives-palette's call, so either route counts
-        const handedOver = [...h.ui('paletteTypeAhead'), ...h.sent.filter((m) => /TypeAhead/.test(m.action))];
-        expect(handedOver).toEqual([expect.objectContaining({ text: 'x' })]);
+        // through the background, never the UI host's postMessage, which the page can use too
+        expect(h.ui('paletteTypeAhead')).toEqual([]);
+        expect(h.sent.filter((m) => /TypeAhead/.test(m.action))).toEqual([
+            expect.objectContaining({ action: 'tabSwitcherPaletteTypeAhead', text: 'x' }),
+        ]);
     });
 });
 

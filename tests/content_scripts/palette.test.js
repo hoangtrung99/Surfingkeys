@@ -500,9 +500,16 @@ describe('actions', () => {
         await f.settle();
     }
 
-    test('Tab on an empty input lists the 19 actions under an Actions chip', async () => {
+    test('Tab on an empty input lists the 26 actions under an Actions chip', async () => {
         await openActions();
-        expect(lis()).toHaveLength(19);
+        expect(titles()).toEqual([
+            'Copy URL', 'Copy URL as Markdown', 'Reload', 'Duplicate Tab', 'Pin / Unpin Tab',
+            'Mute / Unmute Tab', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right',
+            'Close Tabs to the Left', 'Reopen Closed Tab', 'Move Tab to New Window', 'Move Tab to Window…',
+            'Gather All Windows', 'Zoom In', 'Zoom Out', 'Reset Zoom', 'View Source', 'Change Theme…',
+            'Settings…', 'Settings: Appearance', 'Settings: Keys', 'Settings: Sites',
+            'Disable / Enable Surfingkeys on This Site', 'Keyboard Shortcuts…', 'Show All Key Mappings',
+        ]);
         expect(prompt().textContent).toBe('Actions');
         expect(prompt().classList.contains('sk_palette_chip')).toBe(true);
         expect(input().placeholder).toBe('Search actions…');
@@ -616,97 +623,174 @@ describe('actions', () => {
 });
 
 describe('keys typed in the page before the palette had focus', () => {
+    // the top frame hands them over through the background (tabSwitcherPaletteTypeAhead),
+    // which sends them to the tab as a runtime message
+    const typeAhead = async (keys) => {
+        f.deliver(Object.assign({ subject: 'paletteTypeAhead' }, keys));
+        await f.settle();
+    };
+
     test('go in front of what reached the input', async () => {
         await open();
         await type('box');
-        f.post({ action: 'paletteTypeAhead', text: 'in' });
-        await f.settle();
+        await typeAhead({ text: 'in' });
         expect(input().value).toBe('inbox');
         expect(titleOf(focused())).toBe('Inbox');
     });
 
     test('then Enter runs on the result', async () => {
         await open();
-        f.post({ action: 'paletteTypeAhead', text: 'inbox', then: 'Enter' });
-        await f.settle();
+        await typeAhead({ text: 'inbox', then: 'Enter' });
         expect(sentOne('focusTab').tabId).toBe(3);
         expect(ui().style.display).toBe('none');
     });
 
     test('then Shift-Enter flips new tab / current tab', async () => {
         await open();
-        f.post({ action: 'paletteTypeAhead', text: 'best pizza', then: 'Enter', shift: true });
-        await f.settle();
+        await typeAhead({ text: 'best pizza', then: 'Enter', shift: true });
         expect(sentOne('openLink').tab).toEqual({ tabbed: false, active: true });
     });
 
     test('then Escape closes', async () => {
         await open();
-        f.post({ action: 'paletteTypeAhead', text: 'x', then: 'Escape' });
-        await f.settle();
+        await typeAhead({ text: 'x', then: 'Escape' });
         expect(ui().style.display).toBe('none');
     });
 
     test('then Tab lists the actions, also when it comes before the tab list', async () => {
         delete f.answers.tabSwitcherTabs;
         await open();
-        f.post({ action: 'paletteTypeAhead', text: '', then: 'Tab' });
-        await f.settle();
-        expect(prompt().textContent).toBe('');
+        await typeAhead({ text: '', then: 'Tab' });
+        // the mode switches at once (the rows are drawn with the tab list)
+        expect(prompt().textContent).toBe('Actions');
+        // and the list arriving later leaves it there
         f.held.find((h) => h.message.action === 'tabSwitcherTabs').respond({ tabs: TABS });
         await f.settle();
         expect(prompt().textContent).toBe('Actions');
-        expect(lis()).toHaveLength(19);
+        expect(lis()).toHaveLength(26);
     });
 
-    test('are dropped while the palette is closed', async () => {
-        f.post({ action: 'paletteTypeAhead', text: 'inbox', then: 'Enter' });
-        await f.settle();
-        expect(f.sent).toEqual([]);
-        expect(ui().style.display).toBe('none');
-    });
-
-    test('are dropped while another omnibar is shown', async () => {
-        f.post({ action: 'openOmnibar', type: 'Themes' });
-        await f.settle();
+    test('posted by the page over window.postMessage, they do nothing', async () => {
+        await open();
         f.post({ action: 'paletteTypeAhead', text: 'inbox', then: 'Enter' });
         await f.settle();
         expect(input().value).toBe('');
         expect(sentAll('focusTab')).toHaveLength(0);
-        expect(ui().style.display).toBe('');
+        expect(isOpen()).toBe(true);
+    });
+
+    describe('arriving while the palette is closed', () => {
+        const T0 = 1700000000000;
+        let now;
+        beforeEach(() => {
+            now = T0;
+            jest.spyOn(Date, 'now').mockImplementation(() => now);
+        });
+        afterEach(() => {
+            Date.now.mockRestore();
+        });
+
+        // they take another road than the open and can overtake it
+        test('run once the open lands within a second', async () => {
+            await typeAhead({ text: 'inbox', then: 'Enter' });
+            expect(f.sent).toEqual([]);
+            expect(ui().style.display).toBe('none');
+            now = T0 + 999;
+            await open();
+            expect(sentOne('focusTab').tabId).toBe(3);
+            expect(ui().style.display).toBe('none');
+        });
+
+        test('are dropped when no open follows within a second', async () => {
+            await typeAhead({ text: 'inbox', then: 'Enter' });
+            expect(f.sent).toEqual([]);
+            expect(ui().style.display).toBe('none');
+            now = T0 + 1000;
+            await open();
+            expect(isOpen()).toBe(true);
+            expect(input().value).toBe('');
+            expect(sentAll('focusTab')).toHaveLength(0);
+        });
+
+        test('are not typed into another omnibar that is shown', async () => {
+            f.post({ action: 'openOmnibar', type: 'Themes' });
+            await f.settle();
+            await typeAhead({ text: 'inbox', then: 'Enter' });
+            expect(input().value).toBe('');
+            expect(sentAll('focusTab')).toHaveLength(0);
+            expect(ui().style.display).toBe('');
+            f.Front.hidePopup();
+            await f.settle();
+            // and are gone by the time a later palette opens
+            now = T0 + 1000;
+            await open();
+            expect(input().value).toBe('');
+            expect(sentAll('focusTab')).toHaveLength(0);
+        });
     });
 });
 
-describe('known bugs', () => {
-    // known bug palette-missing-default-alias
-    test.failing('typing still lists matches when the default search alias is removed', async () => {
-        // an exception in the input handler is kept as this test's failure, not
-        // reported as one outside it that test.failing cannot see
+describe('the default search alias removed', () => {
+    const DDG = { alias: 'd', prompt: 'duckduckgo', url: 'https://duckduckgo.com/?q=' };
+
+    // an exception in the input handler is kept as the test's failure, not
+    // reported as one outside it
+    async function withoutGoogle(others, body) {
         const thrown = [];
         const keep = (e) => {
             e.preventDefault();
             thrown.push(e.error);
         };
         window.addEventListener('error', keep);
+        others.forEach((engine) => f.post(Object.assign({ action: 'addSearchAlias' }, engine)));
         f.post({ action: 'removeSearchAlias', alias: 'g' });
         try {
-            await open();
-            await type('figma');
+            await body();
             expect(thrown).toEqual([]);
-            expect(titles()).toContain('Figma — design');
         } finally {
             window.removeEventListener('error', keep);
+            others.forEach((engine) => f.post({ action: 'removeSearchAlias', alias: engine.alias }));
             f.post(Object.assign({ action: 'addSearchAlias' }, GOOGLE));
         }
+    }
+
+    test('typing still lists matches, and searches with the first engine left', async () => {
+        await withoutGoogle([DDG], async () => {
+            await open();
+            await type('figma');
+            expect(titles()).toContain('Figma — design');
+            await type('best pizza');
+            expect(lis().map((li) => li.url)).toContain('https://duckduckgo.com/?q=best%20pizza');
+            f.press('<Enter>', { target: input() });
+            expect(sentOne('openLink')).toEqual(expect.objectContaining({ url: 'https://duckduckgo.com/?q=best%20pizza' }));
+        });
     });
 
-    // known bug palette-tab-before-list
-    test.failing('Tab pressed before the tab list arrives lists the actions', async () => {
+    test('with no engine left, typing lists matches and Enter opens no search', async () => {
+        await withoutGoogle([], async () => {
+            await open();
+            await type('figma');
+            expect(titles()).toContain('Figma — design');
+            await type('best pizza');
+            expect(lis()).toEqual([]);
+            f.press('<Enter>', { target: input() });
+            expect(sentAll('openLink')).toEqual([]);
+        });
+    });
+});
+
+describe('Tab before the tab list', () => {
+    test('Tab pressed before the tab list arrives lists the actions', async () => {
         delete f.answers.tabSwitcherTabs;
         await open();
-        f.press('<Tab>', { target: input() });
+        const [down] = f.press('<Tab>', { target: input() });
+        expect(down.defaultPrevented).toBe(true);
+        expect(prompt().textContent).toBe('Actions');
         f.held.find((h) => h.message.action === 'tabSwitcherTabs').respond({ tabs: TABS });
         await f.settle();
         expect(prompt().textContent).toBe('Actions');
+        // what is typed next filters the actions, not the tabs
+        await type('duplicate');
+        expect(titles()).toEqual(['Duplicate Tab']);
     });
 });

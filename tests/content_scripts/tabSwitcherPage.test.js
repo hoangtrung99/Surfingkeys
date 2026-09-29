@@ -4,7 +4,9 @@
 //
 // The module keeps its state at module level, so every test loads a fresh copy
 // (jest.isolateModules) with its own chrome mock, Mode stack and a stub host
-// whose `command` is what would reach the frontend. Earlier copies stay
+// whose `command` is what would reach the frontend and whose `afterCommands`
+// stands for a frontend already up (front.js runs the callback once every
+// command so far is posted; here, at once). Earlier copies stay
 // attached to window; the window blur in afterEach resets them.
 //
 // The subframe branches (window !== top) cannot run here: jsdom's window.top is
@@ -22,14 +24,14 @@ function load({ install = true } = {}) {
         const Mode = require(path.join(SRC, 'content_scripts/common/mode.js')).default;
         Mode.init();  // content.js does this before anything installs
         const installTabSwitcher = require(path.join(SRC, 'content_scripts/tabSwitcher.js')).default;
-        host = { command: jest.fn() };
+        host = { command: jest.fn(), afterCommands: jest.fn((cb) => cb()) };
         api = { mapkey: jest.fn() };
         install && installTabSwitcher(api, host);
     });
 }
 
 const commands = () => host.command.mock.calls.map((c) => c[0]);
-const shortcut = (action) => ext.deliver({ subject: 'tabSwitcherCommand', action });
+const shortcut = (action, cmdId) => ext.deliver({ subject: 'tabSwitcherCommand', action, cmdId });
 const mapping = (keys) => api.mapkey.mock.calls.find((c) => c[0] === keys)[2];
 const relayed = (action) => ext.sent.filter((m) => m.action === action);
 
@@ -136,10 +138,29 @@ describe('browser shortcut (tabSwitcherCommand)', () => {
         expect(commands()).toEqual([expect.objectContaining({ action: 'openSwitcher', backward: true })]);
     });
 
-    test('before installTabSwitcher ran, nothing is sent to a frontend', () => {
+    test('before installTabSwitcher ran, the top frame answers shown: false and sends nothing', () => {
         load({ install: false });
-        expect(shortcut('openSwitcher')).toEqual([{}]);
+        // the background then falls back as where no content script answers
+        expect(shortcut('openSwitcher')).toEqual([{ shown: false }]);
         expect(host.command).not.toHaveBeenCalled();
+    });
+
+    test('a second open with the same cmdId is dropped, a new cmdId acts again', () => {
+        load();
+        shortcut('openPalette', '1:1');
+        // the top frame hearing the same press again (a focused iframe in a shadow root)
+        ext.deliver({ subject: 'tabSwitcherRelay', data: { open: 'openPalette', cmdId: '1:1' } });
+        expect(commands()).toEqual([{ action: 'togglePalette' }]);
+        shortcut('openPalette', '1:2');
+        expect(commands()).toEqual([{ action: 'togglePalette' }, { action: 'togglePalette' }]);
+    });
+
+    test('the same cmdId also opens the switcher once', () => {
+        load();
+        document.hasFocus.mockReturnValue(false);
+        shortcut('openSwitcher', '7:3');
+        ext.deliver({ subject: 'tabSwitcherRelay', data: { open: 'openSwitcher', cmdId: '7:3' } });
+        expect(commands()).toEqual([expect.objectContaining({ action: 'openSwitcher' })]);
     });
 });
 
@@ -211,7 +232,8 @@ describe('tabSwitcherUiVisible', () => {
 });
 
 describe('keys typed before the palette has focus', () => {
-    const typeAhead = () => commands().filter((c) => c.action === 'paletteTypeAhead');
+    // handed to the frontend through the background, never over postMessage
+    const typeAhead = () => relayed('tabSwitcherPaletteTypeAhead').map(({ text, then, shift }) => ({ text, then, shift }));
 
     function openPalette() {
         load();
@@ -228,6 +250,8 @@ describe('keys typed before the palette has focus', () => {
         expect(typeAhead()).toEqual([]);
         jest.advanceTimersByTime(1);
         expect(typeAhead()).toEqual([expect.objectContaining({ text: 'xfig', then: null })]);
+        // none of it reached the frontend as a window command
+        expect(commands()).toEqual([{ action: 'togglePalette' }]);
     });
 
     test('Backspace edits what is held', () => {
@@ -242,14 +266,14 @@ describe('keys typed before the palette has focus', () => {
         press('ab<Enter>', { trusted: true });
         expect(typeAhead()).toEqual([]);
         jest.advanceTimersByTime(0);
-        expect(typeAhead()).toEqual([{ action: 'paletteTypeAhead', text: 'ab', then: 'Enter', shift: false }]);
+        expect(typeAhead()).toEqual([{ text: 'ab', then: 'Enter', shift: false }]);
     });
 
     test.each(['Escape', 'Tab'])('%s is handed over too', (name) => {
         openPalette();
         press(name === 'Tab' ? '<Shift-Tab>' : '<Esc>', { trusted: true });
         jest.advanceTimersByTime(0);
-        expect(typeAhead()).toEqual([{ action: 'paletteTypeAhead', text: '', then: name, shift: name === 'Tab' }]);
+        expect(typeAhead()).toEqual([{ text: '', then: name, shift: name === 'Tab' }]);
     });
 
     test('Ctrl and Meta chords pass through', () => {
@@ -277,6 +301,14 @@ describe('keys typed before the palette has focus', () => {
         expect(down.defaultPrevented).toBe(false);
         jest.advanceTimersByTime(500);
         expect(commands()).toEqual([{ action: 'togglePalette' }]);
+    });
+
+    test('keys the page dispatches are neither held nor handed over', () => {
+        openPalette();
+        const downs = press('ab<Enter>');
+        expect(downs.map((e) => e.defaultPrevented)).toEqual([false, false, false]);
+        jest.advanceTimersByTime(500);
+        expect(typeAhead()).toEqual([]);
     });
 
     test('nothing typed, nothing handed over', () => {
