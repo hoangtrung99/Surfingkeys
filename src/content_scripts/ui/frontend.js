@@ -9,12 +9,12 @@ import {
     htmlEncode,
     initL10n,
     initSKFunctionListener,
-    localizeAnnotation,
     refreshHints,
     rotateInput,
     setSanitizedContent,
     mapInMode
 } from '../common/utils.js';
+import { localizeAnnotation } from '../common/annotation.js';
 import { RUNTIME, runtime } from '../common/runtime.js';
 import KeyboardUtils from '../common/keyboardUtils';
 import Mode from '../common/mode';

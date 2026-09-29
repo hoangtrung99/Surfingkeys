@@ -2,7 +2,7 @@
 // content.js applies them with api.map, which ADDS the new key: the original one
 // keeps working unless the action is disabled (an empty key), and the rows say so.
 // Advanced mode ignores basicMappings (content.js applySettings).
-import { localizeAnnotation } from '../common/utils.js';
+import { localizeAnnotation } from '../common/annotation.js';
 import { closeDialog, h, openDialog } from './dom.js';
 
 // the actions listed, in this order

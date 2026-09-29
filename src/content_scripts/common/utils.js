@@ -816,18 +816,6 @@ function initL10n(cb) {
     }
 }
 
-/*
- * A mapping's annotation in the user's language. It is a string, or an array whose
- * first item is a format string and the rest its {0}, {1}... arguments, as
- * addSearchAlias writes ['#8Open Omnibar for {0} Search', 'google'].
- */
-function localizeAnnotation(locale, annotation) {
-    if (Array.isArray(annotation)) {
-        return locale(annotation[0]).format(...annotation.slice(1));
-    }
-    return locale(annotation);
-}
-
 String.prototype.format = function() {
     var formatted = this;
     for (var i = 0; i < arguments.length; i++) {
@@ -1209,7 +1197,6 @@ export {
     isInUIFrame,
     listElements,
     llmRequest,
-    localizeAnnotation,
     locateFocusNode,
     mapInMode,
     openOmnibar,
