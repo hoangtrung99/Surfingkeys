@@ -1,7 +1,7 @@
 // The Advanced section: lint through the shipped worker, Save with errors, the
 // unsaved-edits state, Ctrl-s, the user-scripts card and its live re-check, and
 // "Load settings from" with its last result.
-import { lintCounts, lintSummary, scriptNotRunning } from '../../../src/content_scripts/options/advanced.js';
+import { lintCounts, lintSummary, scriptNotRunning, userScriptsAllowed } from '../../../src/content_scripts/options/advanced.js';
 import { boot, loadSettings, writes } from './page.js';
 
 jest.mock('../../../src/content_scripts/common/runtime.js', () => ({
@@ -27,6 +27,21 @@ test('scriptNotRunning: a stored script, MV3, user scripts off', () => {
     expect(scriptNotRunning({isMV3: true, isUserScriptsAvailable: true, snippets: 'x'})).toBe(false);
     expect(scriptNotRunning({isMV3: false, snippets: 'x'})).toBe(false);
 });
+
+test('userScriptsAllowed asks the API, which is missing or refuses while they are off', async () => {
+    global.chrome = {};
+    await expect(userScriptsAllowed()).resolves.toBe(false);
+    global.chrome = {userScripts: {getScripts: () => Promise.reject(new Error('not available in this context'))}};
+    await expect(userScriptsAllowed()).resolves.toBe(false);
+    global.chrome = {userScripts: {getScripts: () => Promise.resolve([])}};
+    await expect(userScriptsAllowed()).resolves.toBe(true);
+});
+
+async function settle() {
+    for (let i = 0; i < 5; i++) {
+        await Promise.resolve();
+    }
+}
 
 let consoleError;
 beforeEach(() => {
@@ -193,21 +208,31 @@ describe('user scripts', () => {
         expect(chrome.tabs.create).toHaveBeenCalledWith({url: 'chrome://extensions/?id=ext'});
     });
 
-    test('notices when they are turned on elsewhere, once the page is back in focus', () => {
+    test('notices when they are turned on elsewhere, once the page is back in focus', async () => {
         const {sent, local} = boot({hash: '#advanced', stored: {snippets: 'a();', showAdvanced: true}});
         loadSettings(Object.assign({snippets: 'a();'}, OFF));
-        // what start.js getSettings adds to a full read
-        local.isMV3 = true;
-        local.isUserScriptsAvailable = false;
-        window.dispatchEvent(new Event('focus'));
+        const fullReads = () => sent.filter((m) => m.action === 'getSettings' && m.args === null).length;
+        const back = async () => {
+            window.dispatchEvent(new Event('focus'));
+            await settle();
+        };
+        // still off: the page asks the API, and nothing of the background
+        await back();
+        expect(fullReads()).toBe(0);
         expect(document.getElementById('advancedToggler').disabled).toBe(true);
-        local.isUserScriptsAvailable = true;
-        window.dispatchEvent(new Event('focus'));
+
+        chrome.userScripts = {getScripts: jest.fn(() => Promise.resolve([]))};
+        // what start.js getSettings adds to a full read
+        Object.assign(local, {isMV3: true, isUserScriptsAvailable: true});
+        await back();
+        expect(fullReads()).toBe(1);
         expect(document.getElementById('advancedToggler').disabled).toBe(false);
         expect(document.getElementById('userScriptsStatus').textContent).toMatch(/^Allowed/);
         expect(document.getElementById('snippetNotRunning').hidden).toBe(true);
         expect(document.getElementById('advancedSetting').hidden).toBe(false);
-        expect(sent.filter((m) => m.action === 'getSettings' && m.args === null)).toHaveLength(2);
+        // unchanged since: no more full reads
+        await back();
+        expect(fullReads()).toBe(1);
         expect(writes(sent)).toEqual([]);
     });
 

@@ -54,6 +54,16 @@ export function scriptNotRunning(rs) {
     return !!(rs && rs.isMV3 && !rs.isUserScriptsAvailable && typeof rs.snippets === 'string' && rs.snippets.trim().length);
 }
 
+// chrome.userScripts is there only while "Allow User Scripts" is on, and getScripts
+// throws once it is turned off again.
+export function userScriptsAllowed() {
+    try {
+        return Promise.resolve(chrome.userScripts.getScripts()).then(() => true, () => false);
+    } catch (e) {
+        return Promise.resolve(false);
+    }
+}
+
 function lineCount(text) {
     return text.replace(/\n+$/, '').split('\n').length;
 }
@@ -525,20 +535,25 @@ export default {
         }
 
         // The browser's "Allow User Scripts" switch is flipped on another page, and
-        // tells nobody: the page asks again whenever the user comes back to it.
-        let asking = false;
+        // tells nobody: the page asks again whenever the user comes back to it. It
+        // asks the API itself, which only reads: the full settings read that says
+        // the same also re-registers the user script, and one per focus would race
+        // the saves around it. That read is made only once the answer has changed.
+        let checking = false;
         function recheck() {
-            if (asking || document.visibilityState === 'hidden' || !ctx.settings || !ctx.settings.isMV3) {
+            if (checking || document.visibilityState === 'hidden' || !ctx.settings || !ctx.settings.isMV3) {
                 return;
             }
-            asking = true;
-            RUNTIME('getSettings', null, (resp) => {
-                asking = false;
-                const rs = resp && resp.settings;
-                if (rs && !!rs.isUserScriptsAvailable !== available) {
-                    ctx.patch({isUserScriptsAvailable: !!rs.isUserScriptsAvailable, showAdvanced: rs.showAdvanced});
-                    ctx.announce(rs.isUserScriptsAvailable ? 'User scripts are allowed' : 'User scripts are no longer allowed');
+            checking = true;
+            userScriptsAllowed().then((allowed) => {
+                if (allowed === available) {
+                    checking = false;
+                    return;
                 }
+                ctx.refresh((rs) => {
+                    checking = false;
+                    ctx.announce(rs.isUserScriptsAvailable ? 'User scripts are allowed' : 'User scripts are no longer allowed');
+                });
             });
         }
         window.addEventListener('focus', recheck);
