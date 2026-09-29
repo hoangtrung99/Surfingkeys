@@ -3,6 +3,7 @@
 import createSettingsPage from '../../../src/content_scripts/options/shell.js';
 import { LAST_SECTION_KEY } from '../../../src/content_scripts/options/router.js';
 import { PALETTES } from '../../../src/content_scripts/common/themes.js';
+import { ALIAS_TRIES } from '../../../src/content_scripts/options/search.js';
 
 const fs = require('fs');
 const path = require('path');
@@ -179,6 +180,18 @@ describe('settings shell', () => {
         expect(writes).toEqual([]);
     });
 
+    test('the link of the section on screen ends a search', () => {
+        boot({hash: '#keys'});
+        const filter = document.getElementById('settingsFilter');
+        filter.value = 'proxy';
+        filter.dispatchEvent(new Event('input'));
+        expect(document.getElementById('settingsMain').classList.contains('sk-filtering')).toBe(true);
+        document.getElementById('settingsLink-keys').click();
+        expect(filter.value).toBe('');
+        expect(document.getElementById('settingsMain').classList.contains('sk-filtering')).toBe(false);
+        expect(visible()).toEqual(['keys']);
+    });
+
     test('lets Tab reach the fields: Surfingkeys may not blur them here', () => {
         boot();
         const {normal} = loadSettings({showAdvanced: false});
@@ -216,6 +229,39 @@ describe('settings shell', () => {
         expect(document.getElementById('settingsMode').textContent).toBe('Basic mode');
         ctx.patch({showAdvanced: true});
         expect(document.getElementById('settingsMode').textContent).toBe('Advanced mode · script');
+    });
+});
+
+describe('search engines section', () => {
+    test('asks for the aliases a bounded number of times, then says there are none', () => {
+        jest.useFakeTimers();
+        try {
+            boot({hash: '#search'});
+            const {frontCommand} = loadSettings({showAdvanced: false}, {});
+            jest.advanceTimersByTime(60000);
+            expect(frontCommand).toHaveBeenCalledTimes(ALIAS_TRIES);
+            expect(ALIAS_TRIES).toBe(10);
+            expect(document.getElementById('searchAliasesStatus').textContent).toBe('No search engines found.');
+            expect(document.getElementById('searchAliasesStatus').hidden).toBe(false);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('lists the aliases once a later try finds them', () => {
+        jest.useFakeTimers();
+        try {
+            boot({hash: '#search'});
+            const {frontCommand} = loadSettings({showAdvanced: false}, {});
+            jest.advanceTimersByTime(1000);
+            frontCommand.mockImplementation((msg, cb) => cb({aliases: {g: {prompt: 'google'}}}));
+            jest.advanceTimersByTime(60000);
+            expect(frontCommand.mock.calls.length).toBeLessThan(ALIAS_TRIES);
+            expect(document.getElementById('searchAlias-g')).not.toBeNull();
+            expect(document.getElementById('searchAliasesStatus').hidden).toBe(true);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 

@@ -1,7 +1,7 @@
 // The pure parts of the settings page (src/content_scripts/options/).
 import { LAST_SECTION_KEY, landingSection, rememberSection, rememberedSection, sectionFromHash } from '../../../src/content_scripts/options/router.js';
 import { NONE_DARK, NONE_LIGHT, pageScheme, pageTheme, pageThemeCss } from '../../../src/content_scripts/options/tokens.js';
-import { ALIAS_TRIES, aliasName, removeSearchAliasLines } from '../../../src/content_scripts/options/search.js';
+import { aliasName, removeSearchAliasLines } from '../../../src/content_scripts/options/search.js';
 import { normalizeProxyServer } from '../../../src/content_scripts/options/proxy.js';
 import { getURIPath } from '../../../src/content_scripts/options/advanced.js';
 import { overridesTheme } from '../../../src/content_scripts/options/appearance.js';
@@ -150,10 +150,6 @@ describe('search engines', () => {
         expect(removeSearchAliasLines({w: 'bing', b: 'baidu'})).toBe("api.removeSearchAlias('b');\napi.removeSearchAlias('w');");
         expect(removeSearchAliasLines({"'": 'x'})).toBe("api.removeSearchAlias('\\'');");
         expect(removeSearchAliasLines(undefined)).toBe('');
-    });
-
-    test('gives up on an empty alias list after a bounded number of tries', () => {
-        expect(ALIAS_TRIES).toBe(10);
     });
 });
 

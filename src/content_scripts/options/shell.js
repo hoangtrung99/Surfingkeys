@@ -85,6 +85,13 @@ export default function createSettingsPage(deps) {
         }, heading, body);
         main.insertBefore(el, noMatch);
         const link = h('a', {href: `#${def.id}`, id: `settingsLink-${def.id}`}, def.title);
+        // the link of the section already in the URL changes no hash, so no
+        // hashchange: it ends a search here instead
+        link.addEventListener('click', () => {
+            if (location.hash === `#${def.id}`) {
+                show(def.id, true);
+            }
+        });
         nav.querySelector('ul').append(h('li', null, link));
         return {def, el, link, api: {}, words: fold(`${def.title} ${def.keywords || ''}`)};
     });
