@@ -24,7 +24,8 @@ function pageStorage() {
  * `deps` are what content.js hands pages/options.js. The sections get them on
  * `ctx`, with:
  *   ctx.browserName   getBrowserName()
- *   ctx.settings      the last full settings (null until the page has them)
+ *   ctx.settings      the last full settings (null until the page has them),
+ *                     kept in step with local storage
  *   ctx.frontCommand  a command to this page's Surfingkeys frontend, once loaded
  *   ctx.announce(msg) says msg in the live region and shows it as a banner
  *   ctx.refresh(cb)   re-reads the full settings and hands them to every section
@@ -205,6 +206,22 @@ export default function createSettingsPage(deps) {
             if (area === 'local' && changes.hasOwnProperty(THEME_KEY)) {
                 applyTheme(changes[THEME_KEY].newValue);
                 each('onTheme', changes[THEME_KEY].newValue);
+            }
+            // Local storage is where every write lands first, so ctx.settings
+            // follows it. Sections keep their own state after a write and read
+            // ctx.settings again on each hand-out (a mode switch): a copy left at
+            // what the page loaded would roll them back, and their next write
+            // would store that rollback.
+            if (area === 'local' && ctx.settings) {
+                // a copy: the object handed out may be content.js's own
+                ctx.settings = Object.assign({}, ctx.settings);
+                Object.keys(changes).forEach((k) => {
+                    if (changes[k].hasOwnProperty('newValue')) {
+                        ctx.settings[k] = changes[k].newValue;
+                    } else {
+                        delete ctx.settings[k];
+                    }
+                });
             }
             each('onStorage', changes, area);
         });

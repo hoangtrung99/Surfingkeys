@@ -17,8 +17,10 @@ const HTML = fs.readFileSync(path.join(__dirname, '../../../src/pages/options.ht
 const SECTIONS = ['appearance', 'keys', 'search', 'sites', 'advanced', 'proxy', 'backup', 'about'];
 
 // the Mode surface the Keys section's key picker uses
+let modes;
 function FakeMode(name) {
     this.name = name;
+    modes[name] = this;
     this.addEventListener = jest.fn();
     this.enter = jest.fn();
     this.exit = jest.fn();
@@ -32,6 +34,7 @@ function boot({hash = '', stored = {}, browser = 'Chrome'} = {}) {
     document.documentElement.innerHTML = HTML.replace(/^[\s\S]*?<html[^>]*>/, '').replace(/<\/html>[\s\S]*$/, '');
     window.history.replaceState(null, '', `/pages/options.html${hash}`);
     storageListeners = [];
+    modes = {};
     window.scrollTo = jest.fn();
     global.chrome = {
         runtime: {getManifest: () => ({version: '9.9.9'}), id: 'ext'},
@@ -39,10 +42,27 @@ function boot({hash = '', stored = {}, browser = 'Chrome'} = {}) {
         tabs: {create: jest.fn()},
     };
     const sent = [];
+    // What the background does with a write: local storage first, which tells
+    // every page through onChanged, then the reply.
+    const local = Object.assign({}, stored);
+    function store(diff) {
+        const changes = {};
+        Object.keys(diff).forEach((k) => {
+            changes[k] = {oldValue: local[k], newValue: diff[k]};
+            local[k] = diff[k];
+        });
+        storageListeners.forEach((fn) => fn(JSON.parse(JSON.stringify(changes)), 'local'));
+    }
     const RUNTIME = jest.fn((action, args, cb) => {
-        sent.push({action, args});
+        sent.push({action, args: JSON.parse(JSON.stringify(args))});
         if (action === 'localData' && typeof args.data === 'string') {
             cb && cb({data: {[args.data]: stored.paletteTheme}});
+        } else if (action === 'updateSettings') {
+            store(args.settings);
+            cb && cb({error: ''});
+        } else if (action === 'updateProxy' && args.mode) {
+            store({proxyMode: args.mode});
+            cb && cb({proxyMode: args.mode});
         }
     });
     const deps = {
@@ -58,26 +78,33 @@ function boot({hash = '', stored = {}, browser = 'Chrome'} = {}) {
         showBanner: jest.fn(),
     };
     const ctx = createSettingsPage(deps);
-    return {ctx, deps, sent};
+    return {ctx, deps, sent, local};
 }
 
 function visible() {
     return Array.from(document.querySelectorAll('.sk-section')).filter((s) => !s.hidden).map((s) => s.dataset.section);
 }
 
+// the Ace editor of the Advanced section
+let editor;
+
 // what content.js hands the page once Surfingkeys has started on it
-function loadSettings(settings) {
+function loadSettings(settings, aliases) {
     const normal = {
         passFocus: jest.fn(),
         mappings: {find: (k) => ({meta: {annotation: `#1Action ${k}`}})},
     };
     document.dispatchEvent(new CustomEvent('surfingkeys:defaultSettingsLoaded', {detail: {normal, api: {}}}));
-    const frontCommand = jest.fn((msg, cb) => cb({aliases: {g: {prompt: "google<span class='separator'>➤</span>"}}}));
+    const frontCommand = jest.fn((msg, cb) => cb({aliases: aliases || {g: {prompt: "google<span class='separator'>➤</span>"}}}));
     global.ace = {
         edit(el) {
             el.append(document.createElement('textarea'));
-            return {container: el, setValue: jest.fn(), getValue: () => '', setTheme() {}, setOptions() {},
-                setKeyboardHandler() {}, getSession: () => ({setMode() {}}), resize() {}};
+            let value = '';
+            editor = {container: el, setValue: jest.fn((v) => {
+                value = v;
+            }), getValue: () => value, setTheme() {}, setOptions() {},
+            setKeyboardHandler() {}, getSession: () => ({setMode() {}}), resize() {}};
+            return editor;
         },
         config: {loadModule() {}},
     };
@@ -189,5 +216,67 @@ describe('settings shell', () => {
         expect(document.getElementById('settingsMode').textContent).toBe('Basic mode');
         ctx.patch({showAdvanced: true});
         expect(document.getElementById('settingsMode').textContent).toBe('Advanced mode · script');
+    });
+});
+
+describe('changes made on the page', () => {
+    // the key picker's keydown handler, fed the way Mode feeds it
+    function pickKey(origin, key) {
+        document.querySelector(`#basicMappings button[data-origin="${origin}"]`).click();
+        const handler = modes.KeyPicker.addEventListener.mock.calls.find((c) => c[0] === 'keydown')[1];
+        const press = (keyCode, sk_keyName) => handler({keyCode, sk_keyName: sk_keyName || ''});
+        origin.split('').forEach(() => press(8));
+        press(key.charCodeAt(0), key);
+        press(13);
+    }
+    function flip(id, checked) {
+        const input = document.getElementById(id);
+        input.checked = checked;
+        input.dispatchEvent(new Event('change'));
+    }
+
+    test('survive a mode switch, in the sections and in the next write', () => {
+        const {sent, local} = boot({hash: '#search'});
+        loadSettings({showAdvanced: false, isMV3: true, isUserScriptsAvailable: true, disabledSearchAliases: {},
+            basicMappings: {}, proxyMode: 'clear', proxy: [], autoproxy_hosts: [], snippets: '// OLD snippet'},
+        {g: {prompt: 'google'}, w: {prompt: 'bing'}});
+
+        flip('searchAlias-w', false);
+        pickKey('d', 'q');
+        const mode = document.getElementById('proxyModeSelect');
+        mode.value = 'byhost';
+        mode.dispatchEvent(new Event('change'));
+        flip('advancedToggler', true);
+        editor.setValue('// NEW snippet');
+        document.getElementById('save_button').click();
+        expect(local.snippets).toBe('// NEW snippet');
+
+        flip('advancedToggler', false);
+        flip('advancedToggler', true);
+
+        expect(document.getElementById('searchAlias-w').checked).toBe(false);
+        expect(document.querySelector('#basicMappings button[data-origin="d"]').textContent).toBe('q');
+        expect(mode.value).toBe('byhost');
+        expect(editor.getValue()).toBe('// NEW snippet');
+
+        flip('searchAlias-g', false);
+        pickKey('x', 'X');
+        document.getElementById('save_button').click();
+        expect(local.disabledSearchAliases).toEqual({w: 'bing', g: 'google'});
+        expect(local.basicMappings).toEqual({d: 'q', x: 'X'});
+        expect(local.proxyMode).toBe('byhost');
+        expect(sent.filter((m) => m.action === 'updateSettings' && 'snippets' in m.args.settings)
+            .map((m) => m.args.settings.snippets)).toEqual(['// NEW snippet', '// NEW snippet']);
+    });
+
+    test('made in another tab are what a mode switch shows', () => {
+        const {ctx} = boot({hash: '#search'});
+        loadSettings({showAdvanced: false, disabledSearchAliases: {}}, {g: {prompt: 'google'}});
+        storageListeners.forEach((fn) => fn({disabledSearchAliases: {newValue: {g: 'google'}}}, 'sync'));
+        ctx.patch({showAdvanced: false});
+        expect(document.getElementById('searchAlias-g').checked).toBe(true);
+        storageListeners.forEach((fn) => fn({disabledSearchAliases: {newValue: {g: 'google'}}}, 'local'));
+        ctx.patch({showAdvanced: false});
+        expect(document.getElementById('searchAlias-g').checked).toBe(false);
     });
 });
