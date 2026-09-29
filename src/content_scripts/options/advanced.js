@@ -282,7 +282,9 @@ export default {
             if (!mappingsEditor || savedValue === null) {
                 return false;
             }
-            return mappingsEditor.getValue() !== savedValue || localPathInput.value.trim() !== localPathSaved;
+            // localPathSaved holds the address as stored (a bare path as its file://
+            // URL), so the field is compared in that form or it never reads as saved
+            return mappingsEditor.getValue() !== savedValue || getURIPath(localPathInput.value.trim()) !== localPathSaved;
         }
 
         function showDirty() {
@@ -333,6 +335,14 @@ export default {
             }
         }
 
+        // the field shows the address in the form it was stored in, unless it was
+        // edited to another one while the load or save was on its way
+        function showStoredPath() {
+            if (getURIPath(localPathInput.value.trim()) === localPathSaved) {
+                localPathInput.value = localPathSaved;
+            }
+        }
+
         function loadFrom(localPath, settingsCode) {
             saving = true;
             saveButton.disabled = true;
@@ -351,6 +361,7 @@ export default {
                 ctx.announce(message, 5000);
                 if (res.snippets && res.snippets.length) {
                     localPathSaved = localPath;
+                    showStoredPath();
                     shownSnippets = res.snippets;
                     loadEditor(res.snippets);
                     showLocalPath();
@@ -384,6 +395,7 @@ export default {
                     shownSnippets = settingsCode;
                     savedValue = settingsCode;
                     localPathSaved = localPath;
+                    showStoredPath();
                     showLocalPath();
                     setStatus(isDirty() ? 'Unsaved changes' : 'Saved');
                     showDirty();

@@ -284,6 +284,47 @@ describe('load settings from', () => {
         expect(made.editor.getValue()).toBe('// mine');
     });
 
+    const leave = () => {
+        const e = new Event('beforeunload', {cancelable: true});
+        window.dispatchEvent(e);
+        return e.defaultPrevented;
+    };
+
+    test.each([
+        ['a bare path', '/home/me/.sk.js', 'file:///home/me/.sk.js'],
+        ['a Windows path', 'C:\\Users\\me\\.sk.js', 'file:///C:/Users/me/.sk.js'],
+    ])('loads %s as a file:// URL, and is saved once it is loaded', (_, typed, url) => {
+        const {sent} = boot({hash: '#advanced', reply: {
+            loadSettingsFromUrl: () => ({status: 'Succeeded', snippets: '// file'}),
+        }});
+        loadSettings(Object.assign({snippets: '// x'}, ON));
+        const path = document.getElementById('localPath');
+        path.value = typed;
+        path.dispatchEvent(new Event('input'));
+        expect(leave()).toBe(true);
+        save();
+        expect(sent.filter((m) => m.action === 'loadSettingsFromUrl').map((m) => m.args.url)).toEqual([url]);
+        expect(status()).toBe('Loaded');
+        expect(document.title).not.toMatch(/^•/);
+        expect(leave()).toBe(false);
+        expect(path.value).toBe(url);
+    });
+
+    test('a bare path stays saved through a save of the script', () => {
+        const url = 'file:///home/me/.sk.js';
+        const {sent, made} = boot({hash: '#advanced'});
+        loadSettings(Object.assign({snippets: '// x', localPath: url}, ON));
+        const path = document.getElementById('localPath');
+        path.value = '/home/me/.sk.js';
+        path.dispatchEvent(new Event('input'));
+        expect(leave()).toBe(false);
+        made.editor.type('// y');
+        save();
+        expect(writes(sent)).toEqual([{snippets: '// y', localPath: url}]);
+        expect(status()).toBe('Saved');
+        expect(leave()).toBe(false);
+    });
+
     test('has nothing to report without an address', () => {
         boot({hash: '#advanced'});
         loadSettings(Object.assign({snippets: '// x'}, ON));
