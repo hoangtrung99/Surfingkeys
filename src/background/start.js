@@ -1641,7 +1641,11 @@ function start(browser) {
         pf(message.key, function(data) {
             if (message.key === undefined) {
                 onFullSettingsRequested(data);
-                if (data.showAdvanced && data.snippets) {
+                // only the settings page shows it: every other frame would wait on
+                // storage for it and learn another tab's URL
+                const fromOptions = typeof sender.url === "string"
+                    && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL("pages/options.html");
+                if (fromOptions && data.showAdvanced && data.snippets) {
                     readSnippetsError(data.snippets, (error) => {
                         if (error) {
                             data.snippetsError = error;

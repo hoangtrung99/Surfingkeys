@@ -18,8 +18,11 @@ function bootstrap({settings = {}, session = null} = {}) {
         chrome.runtime.onMessage.listeners[0](message, sender, sendResponse);
         return sendResponse;
     };
-    const fullSettings = () => dispatch({action: 'getSettings', needResponse: true}).mock.calls[0][0].settings;
-    return {chrome, dispatch, fullSettings};
+    const settingsOf = (sender) => dispatch({action: 'getSettings', needResponse: true}, sender).mock.calls[0][0].settings;
+    // the settings page asks from its own URL, a hash and all
+    const optionsPage = {frameId: 0, url: chrome.runtime.getURL('pages/options.html') + '#advanced'};
+    const fullSettings = () => settingsOf(optionsPage);
+    return {chrome, dispatch, fullSettings, settingsOf};
 }
 
 function sessionArea() {
@@ -70,6 +73,12 @@ describe('snippet errors reported by pages', () => {
             url: TAB.url,
             at: expect.any(Number),
         });
+    });
+
+    it('are handed to no page but the settings page', () => {
+        const {dispatch, settingsOf} = bootstrap({settings: {showAdvanced: true, snippets}});
+        dispatch({action: 'reportSnippetsError', error: 'SyntaxError: x', rev: snippetsRevision(snippets)});
+        expect(settingsOf({tab: {...TAB}, frameId: 0, url: TAB.url})).not.toHaveProperty('snippetsError');
     });
 
     it('are dropped once the saved snippet is another one', () => {
