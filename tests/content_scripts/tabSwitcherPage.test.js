@@ -69,6 +69,21 @@ afterEach(() => {
     document.documentElement.querySelectorAll(':scope > div').forEach((d) => d.remove());
 });
 
+// every trusted-key test below stands on this: dispatchTrusted reaches into
+// jsdom's private internals, which a jsdom upgrade may change
+test('dispatchTrusted delivers the event as trusted, to the listeners of its target', () => {
+    const seen = [];
+    const onKey = (e) => seen.push([e.target, e.isTrusted]);
+    window.addEventListener('keydown', onKey);
+    try {
+        const event = key('keydown', { key: 'a' });
+        expect(dispatchTrusted(document.body, event)).toBe(event);
+        expect(seen).toEqual([[document.body, true]]);
+    } finally {
+        window.removeEventListener('keydown', onKey);
+    }
+});
+
 describe('browser shortcut (tabSwitcherCommand)', () => {
     test('is always answered, so the background knows a content script is here', () => {
         load();

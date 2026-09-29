@@ -217,22 +217,33 @@ export function parseKeys(keys) {
     return inits;
 }
 
-// jsdom's own object behind a DOM wrapper (an Event, a Node)
+// jsdom's own object behind a DOM wrapper (an Event, a Node). Private to jsdom
+// (lib/jsdom/living/generated/utils.js implSymbol, checked against 26.1): a
+// jsdom that drops it fails here by name, not as a trusted key never arriving.
 function jsdomImpl(wrapper) {
-    return wrapper[Object.getOwnPropertySymbols(wrapper).find((s) => s.description === 'impl')];
+    const symbol = Object.getOwnPropertySymbols(wrapper).find((s) => s.description === 'impl');
+    if (!symbol) {
+        throw new Error('dispatchTrusted: this jsdom has no "impl" symbol on its wrappers');
+    }
+    return wrapper[symbol];
 }
 
 /**
  * Dispatch `event` on `target` as the browser would for the user: with
  * isTrusted set. dispatchEvent() marks every event untrusted, as for a page
  * script, and code that ignores keys the page makes up (content_scripts/
- * tabSwitcher.js) would then never see one; jsdom's internal dispatch is the
- * only way to deliver a trusted one.
+ * tabSwitcher.js) would then never see one; jsdom's internal dispatch
+ * (EventTargetImpl._dispatch, private, as jsdomImpl) is the only way to deliver
+ * a trusted one.
  */
 export function dispatchTrusted(target, event) {
     const impl = jsdomImpl(event);
+    const targetImpl = jsdomImpl(target);
+    if (typeof targetImpl._dispatch !== 'function') {
+        throw new Error('dispatchTrusted: this jsdom has no EventTargetImpl._dispatch');
+    }
     impl.isTrusted = true;
-    jsdomImpl(target)._dispatch(impl);
+    targetImpl._dispatch(impl);
     return event;
 }
 
