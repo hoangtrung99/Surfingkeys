@@ -244,6 +244,9 @@ export default {
         // the editor text that matches storage (the sample when nothing is
         // stored): anything else in the editor is an edit Save has not stored
         let savedValue = null;
+        // Ace reports a replaced text as a removal, then an insertion: the page
+        // must not show the empty editor between them as an edit
+        let replacing = false;
         let available = true;
         let saving = false;
         let lint = {errors: 0, warnings: 0};
@@ -298,9 +301,6 @@ export default {
         }
 
         // puts text from storage in the editor, as the new saved state
-        // (Ace reports a replaced text as a removal, then an insertion: the page
-        // must not show the empty editor between them as an edit)
-        let replacing = false;
         function loadEditor(text) {
             savedValue = text;
             replacing = true;
