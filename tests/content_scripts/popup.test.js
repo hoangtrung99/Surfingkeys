@@ -13,7 +13,7 @@ function makeEvent() {
 
 // what the popup reaches: the background over sendMessage, the active tab,
 // storage and the browser shortcuts
-function mockChrome({url = 'https://github.com/brookhong/Surfingkeys', blocklist = {}, theme, commands} = {}) {
+function mockChrome({url = 'https://github.com/brookhong/Surfingkeys', blocklist = {}, theme, commands, patterns} = {}) {
     const sent = [];
     const answers = {
         getSettings: () => ({settings: {blocklist: {...blocklist}}}),
@@ -39,6 +39,16 @@ function mockChrome({url = 'https://github.com/brookhong/Surfingkeys', blocklist
         tabs: {
             query: jest.fn((info, cb) => cb(url ? [{id: 7, url}] : [])),
             create: jest.fn(),
+            // the page's Surfingkeys, when it has one
+            sendMessage: jest.fn((id, message, opts, cb) => {
+                if (message.subject === 'getPagePatterns' && patterns) {
+                    cb(patterns);
+                } else {
+                    global.chrome.runtime.lastError = {message: 'Could not establish connection. Receiving end does not exist.'};
+                    cb();
+                    global.chrome.runtime.lastError = undefined;
+                }
+            }),
         },
         storage: {
             local: {get: jest.fn((key, cb) => cb(theme === undefined ? {} : {paletteTheme: theme}))},
@@ -179,6 +189,32 @@ describe('popup', () => {
         expect($('globalNote').textContent).toBe('Off everywhere');
     });
 
+    test('asks the page\'s own Surfingkeys whether a settings pattern takes it', () => {
+        openPopup();
+        expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {subject: 'getPagePatterns'}, {frameId: 0}, expect.any(Function));
+    });
+
+    test('shows a page a blocklistPattern turns off as off, the switch out of reach', () => {
+        const {$} = openPopup({patterns: {blocklist: true, lurking: false}});
+        expect($('siteSwitch').checked).toBe(false);
+        expect($('siteSwitch').disabled).toBe(true);
+        expect($('siteNote').textContent).toBe('Off here: blocklistPattern in your settings');
+    });
+
+    test('shows a page a lurkingPattern takes as lurking, the switch still turning it off', () => {
+        const {$, change} = openPopup({patterns: {blocklist: false, lurking: true}});
+        expect($('siteSwitch').checked).toBe(true);
+        expect($('siteSwitch').disabled).toBe(false);
+        expect($('siteNote').textContent).toBe('Lurking here: lurkingPattern in your settings');
+        change($('siteSwitch'));
+        expect($('siteNote').textContent).toBe('Off on this site');
+    });
+
+    test('says all sites are off before naming a pattern', () => {
+        const {$} = openPopup({blocklist: {'.*': 1}, patterns: {blocklist: true, lurking: false}});
+        expect($('siteNote').textContent).toBe('Off, with all sites');
+    });
+
     test.each([
         ['a browser page', 'chrome://extensions/', 'Surfingkeys does not run here'],
         ['an extension page', 'chrome-extension://surfingkeys/pages/options.html', 'Surfingkeys does not run here'],
@@ -188,6 +224,7 @@ describe('popup', () => {
         const {$} = openPopup({url});
         expect($('siteSwitch').disabled).toBe(true);
         expect($('siteNote').textContent).toBe(note);
+        expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
     });
 
     test('picks a theme the way the theme menu does, and wears it', () => {

@@ -265,6 +265,16 @@ function start(browser) {
             runtime.on('showBanner', function(msg, sender, response) {
                 showBanner(msg.message, 3000);
             });
+            // For the popup, whose site switch only knows the blocklist: the
+            // patterns come from the settings snippet, which runs in pages only.
+            // Tested the way the background's _getState tests them.
+            runtime.on('getPagePatterns', function(msg, sender, response) {
+                const takes = (p) => !!p && new RegExp(p.source, p.flags).test(window.location.href);
+                response({
+                    blocklist: takes(runtime.conf.blocklistPattern),
+                    lurking: takes(runtime.conf.lurkingPattern),
+                });
+            });
             document.addEventListener("surfingkeys:ensureFrontEnd", function(evt) {
                 modes.front.attach();
             });

@@ -22,6 +22,9 @@ const version = chrome.runtime.getManifest().version;
 let blocklist = null;
 let site = null;  // the web origin of the active tab, the key the blocklist uses for it
 let localFile = false;
+// which of the settings' blocklistPattern and lurkingPattern take the page, as
+// its own Surfingkeys answers: they live in the settings snippet, never here
+let patterns = {};
 
 $('version').textContent = version;
 
@@ -48,11 +51,17 @@ function renderSwitches() {
     $('globalNote').textContent = offEverywhere ? 'Off everywhere' : '';
     if (site) {
         const offHere = blocklist.hasOwnProperty(site);
+        // a pattern turns the page off whatever the site's entry says, so the
+        // switch could change nothing the user would see
+        const offByPattern = !!patterns.blocklist;
         $('siteLabel').textContent = new URL(site).host;
-        siteSwitch.checked = !offEverywhere && !offHere;
+        siteSwitch.checked = !offEverywhere && !offHere && !offByPattern;
         // the site's own entry stays as it is while everything is off
-        siteSwitch.disabled = offEverywhere;
-        $('siteNote').textContent = offEverywhere ? 'Off, with all sites' : (offHere ? 'Off on this site' : 'On');
+        siteSwitch.disabled = offEverywhere || offByPattern;
+        $('siteNote').textContent = offEverywhere ? 'Off, with all sites'
+            : offByPattern ? 'Off here: blocklistPattern in your settings'
+            : offHere ? 'Off on this site'
+            : patterns.lurking ? 'Lurking here: lurkingPattern in your settings' : 'On';
     } else {
         $('siteLabel').textContent = 'This page';
         siteSwitch.checked = false;
@@ -97,6 +106,15 @@ chrome.tabs.query({active: true, lastFocusedWindow: true}, (tabs) => {
     RUNTIME('getSettings', {key: 'blocklist'}, (resp) => {
         blocklist = (resp && resp.settings && resp.settings.blocklist) || {};
         renderSwitches();
+    });
+    // no answer (a page loaded before Surfingkeys, a tab still loading) leaves
+    // the blocklist alone to decide
+    site && chrome.tabs.sendMessage(tab.id, {subject: 'getPagePatterns'}, {frameId: 0}, (resp) => {
+        if (chrome.runtime.lastError || !resp) {
+            return;
+        }
+        patterns = resp;
+        blocklist && renderSwitches();
     });
 });
 
