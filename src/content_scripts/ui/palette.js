@@ -162,6 +162,7 @@ export default function createPalette(omnibar, front, searchEngine) {
         {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},
         {name: 'View Source', keys: 'gs', run: () => RUNTIME('viewSource', {tab: {tabbed: true}})},
         {name: 'Change Theme…', keys: ';T', also: 'color colour scheme appearance dark light', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Themes'}), 100)},
+        {name: 'Auto Theme (Follow System Light / Dark)', also: 'color colour scheme appearance os automatic', run: () => front.contentCommand({action: 'pickTheme', name: 'auto'})},
     ].map((a) => prep(Object.assign({kind: 'action', key: a.name}, a), a.name + ' ' + (a.also || ''), ''));
 
     function urlOf(item) {
