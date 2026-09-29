@@ -268,10 +268,35 @@ div.pressedKey kbd.sk-keyselected { background: var(--sel); }
 .sk-list .sk-switchlabel { flex: 1; min-width: 0; }
 .sk-aliaskeys { color: var(--muted); white-space: nowrap; }
 
+/* ---------- Sites ---------- */
+.sk-sitelist { list-style: none; margin: 8px 0 12px; padding: 0; }
+.sk-siterow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
+  padding: 4px 0; border-bottom: 1px solid var(--rule);
+}
+.sk-siterow:last-child { border-bottom: 0; }
+.sk-sitename { min-width: 0; overflow-wrap: anywhere; font: 13px var(--mono); }
+.sk-siteadd { margin-top: 4px; }
+
 /* ---------- Advanced ---------- */
-.sk-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+/* a note on top of every section (the script is not running) */
+.sk-pagenote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.sk-pagenote p { flex: 1 1 280px; margin: 0; }
+.sk-steps { margin: 4px 0 8px; padding-left: 20px; }
+.sk-userscripts-state { font-weight: 500; }
+.sk-userscripts-state::before { content: "○ "; }
+.sk-userscripts-state.sk-ok::before { content: "● "; color: var(--green, currentColor); }
+.sk-loadrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.sk-loadrow:has(> :not([hidden])) { margin-bottom: 4px; }
+.sk-loadstatus { flex: 1 1 240px; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.sk-loadstatus.sk-error { color: var(--text); }
+.sk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
 .sk-toolbar h3 { margin: 0 auto 0 0; }
-.sk-save-status { color: var(--muted); font-size: 13px; }
+.sk-save-status, .sk-lint-status { color: var(--muted); font-size: 13px; }
+.sk-lint-status.sk-lint-errors { color: var(--text); font-weight: 600; }
+.sk-lint-status.sk-lint-errors::before { content: "⚠ "; }
+/* unsaved edits: the Save button carries a dot, as the tab title does */
+#save_button.sk-dirty::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 #mappings_container { margin-top: 12px; }
 #advancedSetting #mappings {
   width: 100%; height: min(62vh, 640px); min-height: 280px; font-size: 13px;
@@ -295,6 +320,10 @@ div.pressedKey kbd.sk-keyselected { background: var(--sel); }
   font: 500 13px var(--mono); background: var(--fill); color: var(--text); border: 1px solid var(--edge);
 }
 .sk-chip:hover { border-color: var(--accent); }
+
+/* ---------- Backup ---------- */
+.sk-import-group h4 { margin: 12px 0 4px; font-size: 14px; }
+#importPreview p { overflow-wrap: anywhere; }
 
 /* ---------- About ---------- */
 .sk-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 8px 0 12px; }
