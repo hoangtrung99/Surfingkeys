@@ -82,10 +82,10 @@ describe('the Chrome adapter', () => {
             expect(chrome.storage.sync.data).toEqual({ savedAt: 20, theme: 'nord' });
         });
 
-        // known bug loadsettings-localpath-only-hangs: _save() strips localPath and
-        // snippets before writing to sync and skips a write left with savedAt alone,
-        // without calling back, so these settings are never answered
-        test.failing('local saved later with only a snippets file still answers', () => {
+        // _save() strips localPath and snippets before writing to sync and skips a
+        // write left with savedAt alone: it must still call back, or these settings
+        // are never answered
+        test('local saved later with only a snippets file still answers', () => {
             Object.assign(chrome.storage.local.data, { savedAt: 20, localPath: 'http://localhost/sk.js', snippets: 'mapkey()' });
             const cb = load(chromeAdapter, ['localPath']);
             expect(cb).toHaveBeenCalledWith({ localPath: 'http://localhost/sk.js' });

@@ -175,6 +175,10 @@ function _save(storage, data, cb) {
         }
         if (Object.keys(data).length > 1) {
             storage.set(data, cb);
+        } else if (cb) {
+            // nothing but savedAt is left to sync: still answer, or loading
+            // settings saved with only a localPath never calls back
+            cb();
         }
     } else {
         if (data.localPath) {
