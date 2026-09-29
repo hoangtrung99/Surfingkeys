@@ -21,6 +21,12 @@ describe('Nvim', () => {
         nvim.connect("ws://mock");
     });
 
+    // every test's Nvim listens on the one shared transport: left attached, the
+    // earlier instances also answer the events a later test emits
+    afterEach(() => {
+        mockTransport.removeAllListeners();
+    });
+
     describe('notification', () => {
         test('send `nvim_subscribe` when you subscribe', () => {
             nvim.on('onSomething', () => null);
