@@ -28,6 +28,11 @@ export function isPrefixOf(a, b) {
     return ka.length > 0 && ka.length < kb.length && ka.every((k, i) => k === kb[i]);
 }
 
+// fewer keystrokes first, then by code point
+function shortFirst(a, b) {
+    return keystrokes(a).length - keystrokes(b).length || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 function has(o, k) {
     return Object.prototype.hasOwnProperty.call(o, k);
 }
@@ -41,6 +46,7 @@ function has(o, k) {
  *   {type: 'duplicate', origins}    other entries give their actions the same key
  *   {type: 'shadows', words}        newKey runs at once, so these longer keys stop working
  *   {type: 'unreachable', words}    these bound keys run first, so newKey never does
+ *                                   (words: the shortest keys first)
  *   {type: 'stillBound', word}      the original key keeps working too (decision D1)
  * in that order. Turning an action off ("") or keeping its key says nothing.
  */
@@ -78,11 +84,11 @@ export function conflictsFor(words, remaps, origin, newKey, specialKeys = SPECIA
         }
     });
     bound.delete(newKey);
-    const longer = [...bound].filter((w) => isPrefixOf(newKey, w)).sort();
+    const longer = [...bound].filter((w) => isPrefixOf(newKey, w)).sort(shortFirst);
     if (longer.length) {
         hints.push({type: 'shadows', words: longer});
     }
-    const shorter = [...bound].filter((w) => isPrefixOf(w, newKey)).sort();
+    const shorter = [...bound].filter((w) => isPrefixOf(w, newKey)).sort(shortFirst);
     if (shorter.length) {
         hints.push({type: 'unreachable', words: shorter});
     }

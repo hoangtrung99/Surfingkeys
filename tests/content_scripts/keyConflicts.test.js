@@ -39,7 +39,7 @@ describe('conflictsFor', () => {
         const hints = conflictsFor(WORDS, {}, 'e', 'g');
         expect(types(hints)).toEqual(['shadows', 'stillBound']);
         expect(hint(hints, 'shadows').words).toEqual(expect.arrayContaining(['gg', 'g0', 'g$', 'gU']));
-        expect(hint(hints, 'shadows').words).toEqual([...WORDS.filter((w) => w.startsWith('g'))].sort());
+        expect(hint(hints, 'shadows').words).toEqual(['g$', 'g0', 'gU', 'gf', 'gg', 'gi', 'gx0', 'gxx']);
         expect(hint(hints, 'stillBound').word).toBe('e');
     });
 
