@@ -217,18 +217,41 @@ export function parseKeys(keys) {
     return inits;
 }
 
+// jsdom's own object behind a DOM wrapper (an Event, a Node)
+function jsdomImpl(wrapper) {
+    return wrapper[Object.getOwnPropertySymbols(wrapper).find((s) => s.description === 'impl')];
+}
+
+/**
+ * Dispatch `event` on `target` as the browser would for the user: with
+ * isTrusted set. dispatchEvent() marks every event untrusted, as for a page
+ * script, and code that ignores keys the page makes up (content_scripts/
+ * tabSwitcher.js) would then never see one; jsdom's internal dispatch is the
+ * only way to deliver a trusted one.
+ */
+export function dispatchTrusted(target, event) {
+    const impl = jsdomImpl(event);
+    impl.isTrusted = true;
+    jsdomImpl(target)._dispatch(impl);
+    return event;
+}
+
 /**
  * Type `keys` (see parseKeys) into `target` (the focused element by default):
  * a keydown and a keyup per stroke, as the page would receive them. Returns the
  * keydown events, so a test can see what was prevented.
+ *
+ * `trusted`: as the user typing them (see dispatchTrusted); by default they are
+ * untrusted, as keys a page dispatches.
  */
-export function press(keys, { target } = {}) {
+export function press(keys, { target, trusted = false } = {}) {
     return parseKeys(keys).map((init) => {
         const el = target || document.activeElement || document.body;
         const opts = Object.assign({ bubbles: true, cancelable: true, composed: true, which: init.keyCode }, init);
+        const dispatch = trusted ? (e) => dispatchTrusted(el, e) : (e) => el.dispatchEvent(e);
         const down = new KeyboardEvent('keydown', opts);
-        el.dispatchEvent(down);
-        el.dispatchEvent(new KeyboardEvent('keyup', opts));
+        dispatch(down);
+        dispatch(new KeyboardEvent('keyup', opts));
         return down;
     });
 }
