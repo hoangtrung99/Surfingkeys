@@ -96,9 +96,28 @@ function createUiHost(browser, onload) {
     // where a plain move would reload it), else into the top layer as a popover,
     // which Chrome draws above the fullscreen element but does not hit-test, so keys
     // reach the frame and a click reaches the page.
+    // document.fullscreenElement is retargeted: when the element really in fullscreen
+    // sits in a shadow root it names the shadow host, whose slotted children are laid
+    // out yet drawn outside the top layer. So the move aims at the innermost element
+    // an open shadow root names, and it stands only if a hit test at the frame lands
+    // on the frame, which a frame drawn under the top layer never gets.
     var raisedAs = null, hostStyle = "";
-    function raise() {
+    function innermostFullscreenElement() {
         var fs = document.fullscreenElement;
+        while (fs && fs.shadowRoot && fs.shadowRoot.fullscreenElement) {
+            fs = fs.shadowRoot.fullscreenElement;
+        }
+        return fs;
+    }
+    function hitsFrame() {
+        var r = ifr.getBoundingClientRect();
+        var x = Math.min(Math.max(r.left + r.width / 2, 0), window.innerWidth - 1),
+            y = Math.min(Math.max(r.top + r.height / 2, 0), window.innerHeight - 1);
+        var root = uiHost.getRootNode();
+        return r.width > 0 && r.height > 0 && !!root.elementFromPoint && root.elementFromPoint(x, y) === uiHost;
+    }
+    function raise() {
+        var fs = innermostFullscreenElement();
         if (raisedAs || !fs || fs.contains(uiHost)) {
             return;
         }
@@ -111,7 +130,7 @@ function createUiHost(browser, onload) {
             } catch (e) {
                 // not a place it can go: the popover below
             }
-            if (raisedAs && uiHost.getClientRects().length) {
+            if (raisedAs && hitsFrame()) {
                 return;
             }
             lower();
