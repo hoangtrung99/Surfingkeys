@@ -78,30 +78,33 @@ export default {
         // Auto: a radio like the others, and the pair it picks from. Changing the
         // pair keeps the pick as it is; it only changes what Auto draws.
         const autoInput = h('input', {type: 'radio', name: 'theme', value: AUTO_THEME, class: 'sk-vh', id: 'themeAuto'});
-        const autoKind = h('span', {class: 'sk-theme-kind', id: 'themeAutoKind'});
         const previews = {dark: preview('mocha'), light: preview('latte')};
         const selects = {};
-        const pairField = (side, label) => {
-            selects[side] = h('select', {id: side === 'dark' ? 'themePairDark' : 'themePairLight', class: 'sk-input'},
-                THEME_IDS.filter((id) => PALETTES[id].light === (side === 'light'))
+        // a side of the pair: its preview, which picks Auto like the rest of the
+        // card, over the select that changes it
+        const side = (kind, label) => {
+            selects[kind] = h('select', {id: kind === 'dark' ? 'themePairDark' : 'themePairLight', class: 'sk-input'},
+                THEME_IDS.filter((id) => PALETTES[id].light === (kind === 'light'))
                     .map((id) => h('option', {value: id}, PALETTES[id].name)));
-            selects[side].addEventListener('change', () => {
+            selects[kind].addEventListener('change', () => {
                 const pair = {dark: selects.dark.value, light: selects.light.value};
                 ctx.RUNTIME('localData', {data: {[PAIR_KEY]: pair}});
                 ctx.announce(`Auto: ${PALETTES[pair.dark].name} when dark, ${PALETTES[pair.light].name} when light`);
             });
-            return h('div', {class: 'sk-field'}, h('label', {for: selects[side].id, class: 'sk-label'}, label), selects[side]);
+            return h('div', {class: 'sk-auto-side'},
+                h('label', {for: autoInput.id}, previews[kind]),
+                h('div', {class: 'sk-field'}, h('label', {for: selects[kind].id, class: 'sk-label'}, label), selects[kind]));
         };
         const autoCard = h('div', {class: 'sk-theme-card sk-theme-auto sk-row',
             dataset: {theme: AUTO_THEME, filter: 'Auto Follows the system automatic os dark light pair'}},
-            h('label', {class: 'sk-auto-pick', for: 'themeAuto'},
+            h('label', {class: 'sk-auto-pick', for: autoInput.id},
                 autoInput,
-                h('span', {class: 'sk-auto-previews'}, previews.dark, previews.light),
                 h('span', {class: 'sk-theme-meta'},
                     h('span', {class: 'sk-theme-name'}, 'Auto'),
-                    autoKind,
+                    h('span', {class: 'sk-theme-kind'}, 'Follows the system’s dark or light setting'),
                     h('span', {class: 'sk-theme-inuse'}, 'In use'))),
-            h('div', {class: 'sk-fields sk-auto-pair'}, pairField('dark', 'Dark theme'), pairField('light', 'Light theme')));
+            side('dark', 'Dark theme'),
+            side('light', 'Light theme'));
         autoInput.addEventListener('change', () => {
             if (autoInput.checked) {
                 pick(AUTO_THEME, 'Auto');
@@ -126,7 +129,6 @@ export default {
                 selects[side].value = pair[side];
                 previews[side].dataset.theme = pair[side];
             });
-            autoKind.textContent = `${PALETTES[pair.dark].name} when the system is dark, ${PALETTES[pair.light].name} when light`;
         }
         mark(undefined, undefined);
 

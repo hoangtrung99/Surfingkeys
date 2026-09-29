@@ -201,13 +201,17 @@ input.sk-input[aria-invalid="true"] { border-color: var(--red, #cf222e); }
 .sk-pv-focused { background: var(--sel); }
 .sk-pv-hint { font: 700 10px/1.4 var(--mono); padding: 0 4px; border-radius: 4px; background: var(--hint-bg); color: var(--hint-fg); }
 .sk-preview kbd { margin-left: auto; padding: 3px 5px; font-size: 10px; }
-/* Auto spans the whole row: the pick on the left, the pair it draws from on the right */
-.sk-theme-auto { grid-column: 1 / -1; flex-flow: row wrap; align-items: flex-end; gap: 12px 20px; cursor: default; }
-.sk-auto-pick { display: flex; flex-direction: column; gap: 10px; flex: 1 1 300px; min-width: 0; cursor: pointer; }
-.sk-auto-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.sk-auto-pair { flex: 1 1 260px; padding: 0 2px 2px; }
-.sk-auto-pair .sk-field { flex: 1 1 120px; }
-.sk-auto-pair .sk-input { width: 100%; }
+/* Auto spans the whole row: the pick, then a column per side of the pair */
+.sk-theme-auto {
+  grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 12px 16px; align-items: start; cursor: default;
+}
+.sk-auto-pick { display: flex; flex-direction: column; justify-content: center; align-self: stretch; cursor: pointer; }
+.sk-auto-pick .sk-theme-kind { grid-column: 1 / -1; }
+.sk-auto-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sk-auto-side > label { cursor: pointer; }
+.sk-auto-side .sk-preview { display: flex; }
+.sk-auto-side .sk-input { width: 100%; }
 
 /* ---------- Keys ---------- */
 .sk-keylist { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 24px; }
