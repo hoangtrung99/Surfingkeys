@@ -278,6 +278,10 @@ div.pressedKey kbd { font-size: 24px; padding: 14px 18px; min-width: 64px; }
 }
 .sk-chip:hover { border-color: var(--accent); }
 
+/* ---------- Backup ---------- */
+.sk-import-group h4 { margin: 12px 0 4px; font-size: 14px; }
+#importPreview p { overflow-wrap: anywhere; }
+
 /* ---------- About ---------- */
 .sk-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 8px 0 12px; }
 .sk-about dt { color: var(--muted); }
