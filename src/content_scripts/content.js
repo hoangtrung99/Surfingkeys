@@ -23,36 +23,9 @@ import createFront from './front.js';
 import createAPI from './common/api.js';
 import createDefaultMappings from './common/default.js';
 import installTheme from './theme.js';
+import applyBasicMappings from './common/basicMappings.js';
 
 import KeyboardUtils from './common/keyboardUtils';
-
-/*
- * Apply custom key mappings for basic users, the input is like
- * {"a": "b", "b": "a", "c": "d"}
- */
-function applyBasicMappings(api, normal, mappings) {
-    const originKeys = new Set(Object.keys(mappings));
-    const originMappings = {};
-    for (const originKey in mappings) {
-        const newKey = mappings[originKey];
-        // current new key is one original key that will be overrode later
-        // we need save it some where first, since current map will lose it,
-        // such as the `a` in above example.
-        if (originKeys.has(newKey)) {
-            const target = normal.mappings.find(newKey);
-            if (target) {
-                originMappings[newKey] = target.meta;
-            }
-        }
-        if (newKey === "") {
-            normal.mappings.remove(originKey);
-        } else if (originMappings.hasOwnProperty(originKey)) {
-            normal.mappings.add(newKey, originMappings[originKey]);
-        } else {
-            api.map(newKey, originKey);
-        }
-    }
-}
 
 function ensureRegex(regexName) {
     const r = runtime.conf[regexName]
@@ -125,7 +98,10 @@ function applySettings(api, normal, rs) {
     }
     if (!rs.showAdvanced) {
         if (rs.basicMappings) {
-            applyBasicMappings(api, normal, rs.basicMappings);
+            applyBasicMappings(api, normal, rs.basicMappings, isInUIFrame() ? null : (newKey, originKey) => {
+                // the frontend's own copy of the default mappings, as api.map keeps it
+                dispatchSKEvent("front", ['addMapkey', "Normal", newKey, originKey]);
+            });
         }
         if (rs.disabledSearchAliases) {
             for (const key in rs.disabledSearchAliases) {
