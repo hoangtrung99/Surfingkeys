@@ -56,8 +56,8 @@ function boot({hash = '', stored = {}, browser = 'Chrome'} = {}) {
     }
     const RUNTIME = jest.fn((action, args, cb) => {
         sent.push({action, args: JSON.parse(JSON.stringify(args))});
-        if (action === 'localData' && typeof args.data === 'string') {
-            cb && cb({data: {[args.data]: stored.paletteTheme}});
+        if (action === 'localData' && (typeof args.data === 'string' || Array.isArray(args.data))) {
+            cb && cb({data: Object.fromEntries([].concat(args.data).map((k) => [k, local[k]]))});
         } else if (action === 'updateSettings') {
             store(args.settings);
             cb && cb({error: ''});
@@ -176,7 +176,7 @@ describe('settings shell', () => {
         const {sent} = boot();
         loadSettings({basicMappings: {d: 'q'}, disabledSearchAliases: {w: 'bing'}, showAdvanced: false, isMV3: true, isUserScriptsAvailable: false});
         const writes = sent.filter((m) => m.action === 'updateSettings' || m.action === 'updateProxy'
-            || m.action === 'resetSettings' || (m.action === 'localData' && typeof m.args.data !== 'string'));
+            || m.action === 'resetSettings' || (m.action === 'localData' && m.args.data.constructor === Object));
         expect(writes).toEqual([]);
     });
 
@@ -213,6 +213,65 @@ describe('settings shell', () => {
         // a reset removes the pick: back to the default
         storageListeners.forEach((fn) => fn({paletteTheme: {oldValue: 'latte'}}, 'local'));
         expect(document.querySelector('input[name=theme]:checked').value).toBe('mocha');
+    });
+
+    describe('Auto', () => {
+        let system;
+        beforeEach(() => {
+            const listeners = [];
+            const mql = {matches: true, addEventListener: (type, fn) => listeners.push(fn)};
+            window.matchMedia = jest.fn(() => mql);
+            system = {set(dark) {
+                mql.matches = dark;
+                listeners.forEach((fn) => fn({matches: dark}));
+            }};
+        });
+        afterEach(() => {
+            delete window.matchMedia;
+        });
+        const bg = () => document.getElementById('sk_settings_tokens').textContent.match(/--bg: (#[0-9a-f]+);/)[1];
+
+        test('draws the page in the side of the pair the system asks for, live', () => {
+            boot({stored: {paletteTheme: 'auto', paletteThemePair: {dark: 'nord', light: 'dawn'}}});
+            expect(bg()).toBe(PALETTES.nord.bg);
+            expect(document.documentElement.dataset.scheme).toBe('dark');
+            expect(document.querySelector('input[name=theme]:checked').value).toBe('auto');
+            system.set(false);
+            expect(bg()).toBe(PALETTES.dawn.bg);
+            expect(document.documentElement.dataset.scheme).toBe('light');
+            // a pair changed elsewhere
+            storageListeners.forEach((fn) => fn({paletteThemePair: {newValue: {dark: 'nord', light: 'github'}}}, 'local'));
+            expect(bg()).toBe(PALETTES.github.bg);
+            expect(document.getElementById('themePairLight').value).toBe('github');
+        });
+
+        test('the Auto card comes first and shows the pair, the default until one is kept', () => {
+            boot();
+            const cards = Array.from(document.querySelectorAll('.sk-themes .sk-theme-card'));
+            expect(cards[0].dataset.theme).toBe('auto');
+            expect(document.getElementById('themePairDark').value).toBe('mocha');
+            expect(document.getElementById('themePairLight').value).toBe('latte');
+            const options = (id) => Array.from(document.getElementById(id).options).map((o) => o.value);
+            expect(options('themePairDark')).toEqual(Object.keys(PALETTES).filter((id) => !PALETTES[id].light));
+            expect(options('themePairLight')).toEqual(Object.keys(PALETTES).filter((id) => PALETTES[id].light));
+            expect(Array.from(cards[0].querySelectorAll('.sk-preview')).map((p) => p.dataset.theme)).toEqual(['mocha', 'latte']);
+        });
+
+        test('the pair and the Auto pick are sent the way the theme menu sends a pick', () => {
+            const {sent} = boot({stored: {paletteTheme: 'nord'}});
+            const picks = () => sent.filter((m) => m.action === 'localData' && m.args.data.constructor === Object && 'paletteTheme' in m.args.data);
+            const dark = document.getElementById('themePairDark');
+            dark.value = 'gruvbox';
+            dark.dispatchEvent(new Event('change'));
+            expect(sent).toContainEqual({action: 'localData', args: {data: {paletteThemePair: {dark: 'gruvbox', light: 'latte'}}}});
+            // the pair is what Auto draws from; changing it leaves the pick alone
+            expect(picks()).toEqual([]);
+
+            const auto = document.querySelector('input[name=theme][value=auto]');
+            auto.checked = true;
+            auto.dispatchEvent(new Event('change'));
+            expect(picks()).toEqual([{action: 'localData', args: {data: {paletteTheme: 'auto'}}}]);
+        });
     });
 
     test('a picked card sends the pick the way the theme menu does', () => {

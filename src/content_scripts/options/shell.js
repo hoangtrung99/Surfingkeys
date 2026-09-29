@@ -6,7 +6,7 @@
 // Opening the page must never write storage: scripts open it only to send
 // messages from an extension page, and a write there would race theirs. Every
 // write here follows something the user did.
-import { THEME_KEY } from '../common/themes.js';
+import { AUTO_THEME, PAIR_KEY, THEME_KEY, themeInUse } from '../common/themes.js';
 import { fold, h } from './dom.js';
 import { landingSection, rememberSection, sectionFromHash } from './router.js';
 import { pageScheme, pageThemeCss } from './tokens.js';
@@ -212,20 +212,28 @@ export default function createSettingsPage(deps) {
     }).observe(main, {childList: true, subtree: true});
 
     // ------------------------------------------------------------ colours
-    let storedTheme;
+    let storedTheme, storedPair;
     const systemDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-    function applyTheme(stored) {
-        storedTheme = stored;
-        tokens.textContent = pageThemeCss(stored);
-        document.documentElement.dataset.scheme = pageScheme(stored, !!(systemDark && systemDark.matches));
+    function applyTheme() {
+        const dark = !!(systemDark && systemDark.matches);
+        // Auto draws the page in the side of the pair the system asks for
+        const id = storedTheme === AUTO_THEME ? themeInUse(storedTheme, storedPair, dark) : storedTheme;
+        tokens.textContent = pageThemeCss(id);
+        document.documentElement.dataset.scheme = pageScheme(id, dark);
     }
-    systemDark && systemDark.addEventListener && systemDark.addEventListener('change', () => applyTheme(storedTheme));
-    applyTheme(undefined);
+    systemDark && systemDark.addEventListener && systemDark.addEventListener('change', applyTheme);
+    applyTheme();
     if (chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes.hasOwnProperty(THEME_KEY)) {
-                applyTheme(changes[THEME_KEY].newValue);
-                each('onTheme', changes[THEME_KEY].newValue);
+            if (area === 'local' && (changes.hasOwnProperty(THEME_KEY) || changes.hasOwnProperty(PAIR_KEY))) {
+                if (changes.hasOwnProperty(THEME_KEY)) {
+                    storedTheme = changes[THEME_KEY].newValue;
+                }
+                if (changes.hasOwnProperty(PAIR_KEY)) {
+                    storedPair = changes[PAIR_KEY].newValue;
+                }
+                applyTheme();
+                each('onTheme', storedTheme, storedPair);
             }
             // Local storage is where every write lands first, so ctx.settings
             // follows it. Sections keep their own state after a write and read
@@ -290,10 +298,12 @@ export default function createSettingsPage(deps) {
     sections.forEach((s) => {
         s.api = s.def.create(ctx, s.el.querySelector('.sk-section-body')) || {};
     });
-    deps.RUNTIME('localData', {data: THEME_KEY}, (res) => {
-        const stored = res && res.data ? res.data[THEME_KEY] : undefined;
-        applyTheme(stored);
-        each('onTheme', stored);
+    deps.RUNTIME('localData', {data: [THEME_KEY, PAIR_KEY]}, (res) => {
+        const data = (res && res.data) || {};
+        storedTheme = data[THEME_KEY];
+        storedPair = data[PAIR_KEY];
+        applyTheme();
+        each('onTheme', storedTheme, storedPair);
     });
 
     const landing = landingSection(location.hash, pageStorage(), ids);

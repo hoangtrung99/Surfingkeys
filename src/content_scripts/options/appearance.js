@@ -1,7 +1,8 @@
 // Appearance: the built-in theme, picked from cards that each preview it. The pick
 // is sent the way the theme menu (;T) sends it, so every open tab takes it at once;
 // a pick made there shows up here the same way (the shell passes it to onTheme).
-import { DEFAULT_THEME, NO_THEME, PALETTES, THEME_KEY, themeEntries } from '../common/themes.js';
+// The Auto card also holds the pair Auto picks from, a dark theme and a light one.
+import { AUTO_THEME, NO_THEME, PAIR_KEY, PALETTES, THEME_IDS, THEME_KEY, pickedTheme, themeEntries, themePair } from '../common/themes.js';
 import { themeTokens } from '../common/themeCss.js';
 import { h } from './dom.js';
 
@@ -17,10 +18,11 @@ export function overridesTheme(rs) {
 }
 
 // Each card's preview declares its theme's tokens on itself, so it is drawn in
-// that theme whatever the page is drawn in.
+// that theme whatever the page is drawn in. The Auto card's two previews name
+// their theme on themselves, as it changes with the pair.
 function previewCss() {
     return themeEntries().map((e) => {
-        const scope = `.sk-theme-card[data-theme="${e.id}"] .sk-preview`;
+        const scope = `.sk-theme-card[data-theme="${e.id}"] .sk-preview, .sk-preview[data-theme="${e.id}"]`;
         if (e.id === NO_THEME) {
             return `${scope} { ${NO_THEME_PREVIEW} }`;
         }
@@ -29,8 +31,8 @@ function previewCss() {
     }).join('\n');
 }
 
-function preview() {
-    return h('span', {class: 'sk-preview', 'aria-hidden': 'true'},
+function preview(theme) {
+    return h('span', {class: 'sk-preview', 'aria-hidden': 'true', dataset: theme ? {theme} : null},
         h('span', {class: 'sk-pv-bar'}, h('span', {class: 'sk-pv-icon'}), 'github'),
         h('span', {class: 'sk-pv-row'}, h('span', {class: 'sk-pv-title'}, 'Surfingkeys'), h('span', {class: 'sk-pv-url'}, 'github.com')),
         h('span', {class: 'sk-pv-row sk-pv-focused'},
@@ -51,6 +53,10 @@ export default {
         const warning = h('p', {class: 'sk-note sk-warn', id: 'themeOverride', hidden: true},
             'Your settings script sets ', h('code', null, 'settings.theme'),
             ', which is drawn over the theme picked here. Remove it from the script (Advanced) to use these themes.');
+        const pick = (id, name) => {
+            ctx.RUNTIME('localData', {data: {[THEME_KEY]: id}});
+            ctx.announce(`Theme: ${name}`);
+        };
         const cards = themeEntries().map((e) => {
             const input = h('input', {type: 'radio', name: 'theme', value: e.id, class: 'sk-vh'});
             const kind = e.id === NO_THEME ? 'Follows the system' : (e.light ? 'Light' : 'Dark');
@@ -63,26 +69,66 @@ export default {
                     h('span', {class: 'sk-theme-inuse'}, 'In use')));
             input.addEventListener('change', () => {
                 if (input.checked) {
-                    ctx.RUNTIME('localData', {data: {[THEME_KEY]: e.id}});
-                    ctx.announce(`Theme: ${e.name}`);
+                    pick(e.id, e.name);
                 }
             });
-            return {id: e.id, input};
+            return {id: e.id, input, card: input.parentElement};
         });
+
+        // Auto: a radio like the others, and the pair it picks from. Changing the
+        // pair keeps the pick as it is; it only changes what Auto draws.
+        const autoInput = h('input', {type: 'radio', name: 'theme', value: AUTO_THEME, class: 'sk-vh', id: 'themeAuto'});
+        const autoKind = h('span', {class: 'sk-theme-kind', id: 'themeAutoKind'});
+        const previews = {dark: preview('mocha'), light: preview('latte')};
+        const selects = {};
+        const pairField = (side, label) => {
+            selects[side] = h('select', {id: side === 'dark' ? 'themePairDark' : 'themePairLight', class: 'sk-input'},
+                THEME_IDS.filter((id) => PALETTES[id].light === (side === 'light'))
+                    .map((id) => h('option', {value: id}, PALETTES[id].name)));
+            selects[side].addEventListener('change', () => {
+                const pair = {dark: selects.dark.value, light: selects.light.value};
+                ctx.RUNTIME('localData', {data: {[PAIR_KEY]: pair}});
+                ctx.announce(`Auto: ${PALETTES[pair.dark].name} when dark, ${PALETTES[pair.light].name} when light`);
+            });
+            return h('div', {class: 'sk-field'}, h('label', {for: selects[side].id, class: 'sk-label'}, label), selects[side]);
+        };
+        const autoCard = h('div', {class: 'sk-theme-card sk-theme-auto sk-row',
+            dataset: {theme: AUTO_THEME, filter: 'Auto Follows the system automatic os dark light pair'}},
+            h('label', {class: 'sk-auto-pick', for: 'themeAuto'},
+                autoInput,
+                h('span', {class: 'sk-auto-previews'}, previews.dark, previews.light),
+                h('span', {class: 'sk-theme-meta'},
+                    h('span', {class: 'sk-theme-name'}, 'Auto'),
+                    autoKind,
+                    h('span', {class: 'sk-theme-inuse'}, 'In use'))),
+            h('div', {class: 'sk-fields sk-auto-pair'}, pairField('dark', 'Dark theme'), pairField('light', 'Light theme')));
+        autoInput.addEventListener('change', () => {
+            if (autoInput.checked) {
+                pick(AUTO_THEME, 'Auto');
+            }
+        });
+        cards.unshift({id: AUTO_THEME, input: autoInput, card: autoCard});
+
         root.append(
             h('p', {class: 'sk-lead'}, 'The theme of Surfingkeys’ panels, link hints and this page. Every open tab changes with it.'),
             warning,
             h('fieldset', {class: 'sk-themes'},
                 h('legend', {class: 'sk-vh'}, 'Theme'),
-                cards.map((c) => c.input.parentElement)));
+                cards.map((c) => c.card)));
 
-        function mark(stored) {
-            const id = stored === NO_THEME || PALETTES.hasOwnProperty(stored) ? stored : DEFAULT_THEME;
+        function mark(stored, storedPair) {
+            const id = pickedTheme(stored);
             cards.forEach((c) => {
                 c.input.checked = c.id === id;
             });
+            const pair = themePair(storedPair);
+            ['dark', 'light'].forEach((side) => {
+                selects[side].value = pair[side];
+                previews[side].dataset.theme = pair[side];
+            });
+            autoKind.textContent = `${PALETTES[pair.dark].name} when the system is dark, ${PALETTES[pair.light].name} when light`;
         }
-        mark(undefined);
+        mark(undefined, undefined);
 
         return {
             onTheme: mark,
