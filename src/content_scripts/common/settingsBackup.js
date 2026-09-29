@@ -22,7 +22,7 @@ const SETTINGS_TYPES = {
     blocklist: 'object',
     mouseSelectToQuery: 'strings',
     noPdfViewer: 'boolean',
-    proxyMode: 'string',
+    proxyMode: 'proxyMode',
     proxy: 'stringOrStrings',
     autoproxy_hosts: 'hostLists',
     paletteTheme: 'stringOrNull',
@@ -36,6 +36,9 @@ export const SETTINGS_KEYS = Object.keys(SETTINGS_TYPES);
 export const DATA_KEYS = Object.keys(DATA_TYPES);
 // Never exported and never imported: stored LLM credentials (_llmProviderConfig can
 // hold Bedrock keys), the find and command histories (D3), and bookkeeping.
+// the modes the background sets the browser's proxy by (background/chrome.js
+// _applyProxySettings, which writes the mode into the PAC script it builds)
+export const PROXY_MODES = ['always', 'byhost', 'bypass', 'clear', 'direct', 'system'];
 export const NEVER_KEYS = ['_llmProviderConfig', 'findHistory', 'cmdHistory', 'lastKeys', 'savedAt', 'logLevels'];
 
 const TYPE_NAMES = {
@@ -47,6 +50,7 @@ const TYPE_NAMES = {
     stringOrStrings: 'text or a list of text',
     stringOrNull: 'text',
     hostLists: 'a list of host lists',
+    proxyMode: `one of ${PROXY_MODES.join(', ')}`,
 };
 
 function isPlainObject(v) {
@@ -69,8 +73,11 @@ function hasType(value, type) {
         return typeof value === 'string' || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
     case 'hostLists':
         // one list of hosts per proxy; older builds stored one list, or one host
+        // (proxyPair() checks which, against `proxy`)
         return typeof value === 'string' || (Array.isArray(value)
             && value.every((v) => typeof v === 'string' || (Array.isArray(v) && v.every((x) => typeof x === 'string'))));
+    case 'proxyMode':
+        return PROXY_MODES.indexOf(value) !== -1;
     case 'stringOrNull':
         return value === null || typeof value === 'string';
     }
@@ -85,6 +92,35 @@ function pick(raw, keys) {
         }
     });
     return out;
+}
+
+/*
+ * `proxy` and `autoproxy_hosts` in the shape this build stores: a list of proxies,
+ * with a list of hosts for each. The background maps over every host list as a
+ * list, when it applies the proxy at its start, so a shape that does not match
+ * would throw there. Older builds stored one proxy with one list (or one host).
+ */
+function proxyPair(settings) {
+    const hasProxy = settings.hasOwnProperty('proxy'), hasHosts = settings.hasOwnProperty('autoproxy_hosts');
+    if (!hasProxy && !hasHosts) {
+        return;
+    }
+    if (!hasProxy || !hasHosts) {
+        throw new Error('This settings file has only one of “proxy” and “autoproxy_hosts”, which go together.');
+    }
+    const {proxy, autoproxy_hosts: hosts} = settings;
+    if (typeof proxy === 'string') {
+        if (typeof hosts === 'string') {
+            settings.autoproxy_hosts = [[hosts]];
+        } else if (hosts.every((v) => typeof v === 'string')) {
+            settings.autoproxy_hosts = [hosts];
+        } else {
+            throw new Error('This settings file\'s “autoproxy_hosts” is not one list of hosts for its one “proxy”.');
+        }
+        settings.proxy = [proxy];
+    } else if (typeof hosts === 'string' || !hosts.every((v) => Array.isArray(v))) {
+        throw new Error('This settings file\'s “autoproxy_hosts” is not a list of hosts for each “proxy”.');
+    }
 }
 
 /*
@@ -112,7 +148,7 @@ export function exportFileName(date) {
  * Reads the text of a backup file. Returns
  *   {version, exportedAt, extensionVersion, settings, ignored}
  * where `settings` holds only the keys a backup carries, each checked for its
- * type, and `ignored` names every other key the file had. Throws an Error whose
+ * type (the proxy in the shape this build stores), and `ignored` names every other key the file had. Throws an Error whose
  * message can be shown as it is.
  */
 export function parseImport(text) {
@@ -160,6 +196,7 @@ export function parseImport(text) {
             settings[k] = source[k];
         }
     });
+    proxyPair(settings);
     return {version, exportedAt, extensionVersion, settings, ignored};
 }
 

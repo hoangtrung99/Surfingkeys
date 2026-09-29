@@ -123,9 +123,25 @@ describe('parseImport', () => {
         expect(() => parseImport(text)).toThrow(message);
     });
 
-    test('takes the shapes older builds stored', () => {
+    test('takes the shapes older builds stored, as this build stores them', () => {
         const parsed = parseImport(JSON.stringify({proxy: 'PROXY a:1', autoproxy_hosts: 'x.test', paletteTheme: null}));
-        expect(parsed.settings).toEqual({proxy: 'PROXY a:1', autoproxy_hosts: 'x.test', paletteTheme: null});
+        expect(parsed.settings).toEqual({proxy: ['PROXY a:1'], autoproxy_hosts: [['x.test']], paletteTheme: null});
+        expect(parseImport(JSON.stringify({proxy: 'PROXY a:1', autoproxy_hosts: ['x.test', 'y.test']})).settings)
+            .toEqual({proxy: ['PROXY a:1'], autoproxy_hosts: [['x.test', 'y.test']]});
+    });
+
+    // the background maps over every host list as a list when it applies the
+    // proxy, and writes the mode into the PAC script it builds
+    test.each([
+        [{proxyMode: 'byhost', proxy: ['PROXY x:1'], autoproxy_hosts: ['a.com']}, /“autoproxy_hosts” is not a list of hosts for each “proxy”/],
+        [{proxy: ['PROXY x:1'], autoproxy_hosts: 'a.com'}, /“autoproxy_hosts” is not a list of hosts for each/],
+        [{proxy: 'PROXY x:1', autoproxy_hosts: [['a.com']]}, /not one list of hosts for its one “proxy”/],
+        [{proxy: ['PROXY x:1']}, /only one of “proxy” and “autoproxy_hosts”/],
+        [{autoproxy_hosts: [['a.com']]}, /only one of “proxy” and “autoproxy_hosts”/],
+        [{proxyMode: "byhost'; x(); '"}, /“proxyMode” is not one of always, byhost, bypass, clear, direct, system/],
+        [{proxyMode: 'fixed_servers'}, /“proxyMode”/],
+    ])('refuses a proxy the background cannot apply: %j', (settings, message) => {
+        expect(() => parseImport(JSON.stringify({format: BACKUP_FORMAT, version: 1, settings}))).toThrow(message);
     });
 });
 
