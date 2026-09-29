@@ -97,6 +97,7 @@ module.exports = (env, argv) => {
         content: `./src/content_scripts/${browser}.js`,
         'pages/frontend': `./src/content_scripts/ui/frontend.js`,
         'pages/start': './src/content_scripts/start.js',
+        'pages/popup': './src/content_scripts/popup.js',
         'pages/ace': './src/content_scripts/ace.js',
     };
     const moduleEntries = {

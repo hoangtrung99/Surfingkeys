@@ -1,35 +1,59 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
     <head>
         <meta charset="UTF-8">
-        <style>
-body {
-    width: 320px;
-}
-a {
-    font-size: 14px;
-    display: block;
-    color: #000;
-    text-decoration: none;
-    vertical-align: middle;
-    padding: 0.3rem;
-}
-a:hover {
-    background-color: #333;
-    color: #eee;
-}
-
-@-moz-document url-prefix() {
-  .disabledOnFirefox {
-      display: none;
-  }
-}
-        </style>
+        <meta name="color-scheme" content="light dark">
+        <title>Surfingkeys</title>
+        <link rel="stylesheet" href="quickControls.css">
+        <link rel="stylesheet" href="popup.css">
+        <style id="sk_page_tokens"></style>
     </head>
     <body>
-        <a id="disableAll" href="#">Disable Surfingkeys</a>
-        <a href="/pages/options.html" target="_blank">Settings</a>
-        <a href="/pages/start.html" target="_blank">Help</a>
-        <a id="reportIssue" href="#">Report issue</a>
+        <header>
+            <img src="../icons/48.png" alt="" width="20" height="20">
+            <h1>Surfingkeys</h1>
+            <span id="version"></span>
+        </header>
+        <section class="switches" aria-label="Turn Surfingkeys on or off">
+            <label class="sk_switch" id="siteRow">
+                <span class="sk_switch_text">
+                    <span id="siteLabel">This site</span>
+                    <span class="sk_note" id="siteNote"></span>
+                </span>
+                <input type="checkbox" role="switch" id="siteSwitch" disabled>
+            </label>
+            <label class="sk_switch">
+                <span class="sk_switch_text">
+                    <span>All sites</span>
+                    <span class="sk_note" id="globalNote"></span>
+                </span>
+                <input type="checkbox" role="switch" id="globalSwitch" disabled>
+            </label>
+        </section>
+        <section aria-labelledby="themeTitle">
+            <h2 id="themeTitle">Theme <span id="themeName" class="sk_note"></span></h2>
+            <div id="themes" class="sk_swatches" role="radiogroup" aria-labelledby="themeTitle"></div>
+        </section>
+        <section aria-labelledby="shortcutsTitle" id="shortcutsSection" hidden>
+            <h2 id="shortcutsTitle">Shortcuts</h2>
+            <dl id="shortcuts"></dl>
+            <p class="sk_note" id="inPageNote" hidden></p>
+            <button type="button" class="sk_button" id="changeShortcuts">Change shortcuts</button>
+        </section>
+        <nav aria-label="Pages">
+            <p>
+                <a class="sk_link" href="options.html" target="_blank">Settings</a>
+                <a class="sk_link" href="options.html#appearance" target="_blank">Appearance</a>
+                <a class="sk_link" href="options.html#keys" target="_blank">Keys</a>
+                <a class="sk_link" href="options.html#sites" target="_blank">Sites</a>
+            </p>
+            <p>
+                <a class="sk_link" href="start.html#welcome" target="_blank">Getting started</a>
+                <a class="sk_link" href="start.html" target="_blank">Help</a>
+                <a class="sk_link" id="reportIssue" href="https://github.com/hoangtrung99/Surfingkeys/issues" target="_blank">Report issue</a>
+            </p>
+        </nav>
+        <p id="status" class="sk_sr_only" role="status" aria-live="polite"></p>
         <script src="popup.js"></script>
     </body>
 </html>

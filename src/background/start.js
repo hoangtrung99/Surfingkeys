@@ -697,12 +697,34 @@ function start(browser) {
         }
         return "enabled";
     }
+    // The web origin `s` names exactly, or null.
+    function webOrigin(s) {
+        try {
+            const url = new URL(s);
+            return /^https?:$/.test(url.protocol) && url.origin === s ? s : null;
+        } catch (e) {
+            return null;
+        }
+    }
     self.toggleBlocklist = function(message, sender, sendResponse) {
         loadSettings('blocklist', function(data) {
             var origin = ".*";
             var senderOrigin = sender.origin || new URL(getSenderUrl(sender)).origin;
-            if (chrome.runtime.getURL("/").toLowerCase().indexOf(senderOrigin.toLowerCase()) !== 0 && senderOrigin !== "null") {
+            var fromExtension = chrome.runtime.getURL("/").toLowerCase().indexOf(senderOrigin.toLowerCase()) === 0;
+            // Only the extension's own pages (the popup, for the tab it was opened
+            // over) may name a site: a content script speaks for its own page, and
+            // one naming a site could turn Surfingkeys off on any other. A name that
+            // is not a web origin changes nothing, rather than falling back to
+            // turning it off everywhere.
+            var named = fromExtension && message.origin !== undefined;
+            if (!fromExtension && senderOrigin !== "null") {
                 origin = senderOrigin;
+            } else if (named) {
+                origin = webOrigin(message.origin);
+                if (!origin) {
+                    sendResponse({error: "Not a web origin: " + message.origin, blocklist: data.blocklist});
+                    return;
+                }
             }
             if (data.blocklist.hasOwnProperty(origin)) {
                 delete data.blocklist[origin];
@@ -710,8 +732,9 @@ function start(browser) {
                 data.blocklist[origin] = 1;
             }
             _updateAndPostSettings({blocklist: data.blocklist}, function() {
+                var url = named ? new URL(origin) : (sender.tab ? new URL(getSenderUrl(sender)) : null);
                 sendResponse({
-                    state: _getState(data, sender.tab ? new URL(getSenderUrl(sender)) : null, message.blocklistPattern, message.lurkingPattern),
+                    state: _getState(data, url, message.blocklistPattern, message.lurkingPattern),
                     blocklist: data.blocklist,
                     url: origin
                 });
