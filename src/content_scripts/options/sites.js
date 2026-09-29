@@ -122,24 +122,37 @@ export default {
             return {card, render};
         }
 
+        // Changes to one key run one after the other: two begun inside one round
+        // trip would both read the value from before either, and the second
+        // write would put back what the first removed.
+        const queues = {};
         // reads the stored value, hands a copy to `change`, stores what it returns
         function rewrite(key, fallback, change, done) {
-            RUNTIME('getSettings', {key}, (resp) => {
-                const stored = resp && resp.settings ? resp.settings[key] : undefined;
-                const next = change(JSON.parse(JSON.stringify(stored || fallback)));
-                if (next === null) {
-                    done && done(stored || fallback, false);
-                    return;
-                }
-                RUNTIME('updateSettings', {settings: {[key]: next}}, (r) => {
-                    if (r && r.error) {
-                        ctx.announce(r.error, 3000);
-                        done && done(stored || fallback, false);
-                    } else {
-                        done && done(next, true);
+            const queue = queues[key] || (queues[key] = []);
+            queue.push(() => {
+                const finish = (value, wrote) => {
+                    done && done(value, wrote);
+                    queue.shift();
+                    queue.length && queue[0]();
+                };
+                RUNTIME('getSettings', {key}, (resp) => {
+                    const stored = resp && resp.settings ? resp.settings[key] : undefined;
+                    const next = change(JSON.parse(JSON.stringify(stored || fallback)));
+                    if (next === null) {
+                        finish(stored || fallback, false);
+                        return;
                     }
+                    RUNTIME('updateSettings', {settings: {[key]: next}}, (r) => {
+                        if (r && r.error) {
+                            ctx.announce(r.error, 3000);
+                            finish(stored || fallback, false);
+                        } else {
+                            finish(next, true);
+                        }
+                    });
                 });
             });
+            queue.length === 1 && queue[0]();
         }
 
         const blocked = siteList({

@@ -108,6 +108,24 @@ describe('sites section', () => {
         expect(reads).toEqual(['blocklist']);
     });
 
+    test('changes begun inside one round trip run one after the other', () => {
+        const bl = {'https://a.test': 1, 'https://b.test': 1};
+        const {deps, local} = boot({hash: '#sites', stored: {blocklist: bl}});
+        loadSettings({blocklist: bl});
+        const answer = deps.RUNTIME.getMockImplementation();
+        const later = [];
+        deps.RUNTIME.mockImplementation((action, args, cb) => later.push(() => answer(action, args, cb)));
+        document.querySelectorAll('#blocklistSites button').forEach((b) => b.click());
+        const input = document.getElementById('blocklistAdd');
+        input.value = 'c.test';
+        input.form.requestSubmit();
+        while (later.length) {
+            later.shift()();
+        }
+        expect(local.blocklist).toEqual({'https://c.test': 1});
+        expect(listed()).toEqual(['https://c.test']);
+    });
+
     test('Add normalises to an origin, and refuses what names no site', () => {
         const {sent} = boot({hash: '#sites', stored: {blocklist: {'https://a.test': 1}}});
         loadSettings({blocklist: {'https://a.test': 1}});
