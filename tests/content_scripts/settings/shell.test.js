@@ -93,7 +93,7 @@ let editor;
 function loadSettings(settings, aliases) {
     const normal = {
         passFocus: jest.fn(),
-        mappings: {find: (k) => ({meta: {annotation: `#1Action ${k}`}})},
+        mappings: {getMetas: () => ['d', 'x', 'j', 'e'].map((word) => ({word, annotation: `Action ${word}`, feature_group: 1}))},
     };
     document.dispatchEvent(new CustomEvent('surfingkeys:defaultSettingsLoaded', {detail: {normal, api: {}}}));
     const frontCommand = jest.fn((msg, cb) => cb({aliases: aliases || {g: {prompt: "google<span class='separator'>➤</span>"}}}));
@@ -298,6 +298,8 @@ describe('changes made on the page', () => {
         expect(local.snippets).toBe('// NEW snippet');
 
         flip('advancedToggler', false);
+        // keys are read-only in advanced mode
+        pickKey('x', 'X');
         flip('advancedToggler', true);
 
         expect(document.getElementById('searchAlias-w').checked).toBe(false);
@@ -306,7 +308,6 @@ describe('changes made on the page', () => {
         expect(editor.getValue()).toBe('// NEW snippet');
 
         flip('searchAlias-g', false);
-        pickKey('x', 'X');
         document.getElementById('save_button').click();
         expect(local.disabledSearchAliases).toEqual({w: 'bing', g: 'google'});
         expect(local.basicMappings).toEqual({d: 'q', x: 'X'});

@@ -203,21 +203,52 @@ input.sk-input[aria-invalid="true"] { border-color: var(--red, #cf222e); }
 .sk-preview kbd { margin-left: auto; padding: 3px 5px; font-size: 10px; }
 
 /* ---------- Keys ---------- */
-.sk-keylist { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 24px; }
-.sk-keyrow {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
-  padding: 4px 0; border-bottom: 1px solid var(--rule);
+.sk-shortcuts { list-style: none; margin: 8px 0; padding: 0; }
+.sk-shortcutrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px;
+  border-bottom: 1px solid var(--rule);
 }
-.sk-keyrow .annotation { flex: 1; min-width: 0; }
-.sk-keycell { display: flex; align-items: center; gap: 8px; flex: none; }
+.sk-shortcutrow:last-child { border-bottom: 0; }
+.sk-shortcutname { min-width: 0; }
+/* marked by its border and weight: a warning fill with readable text is not possible in every theme */
+.sk-chip-warn {
+  flex: none; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--text); border: 1px solid var(--peach, #bc4c00);
+}
+.sk-chip-warn::before { content: "⚠ "; }
+.sk-keytools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0 0 16px; }
+.sk-keytools .sk-input { width: 100%; }
+.sk-keytools > .sk-muted { align-self: center; font-size: 13px; }
+.sk-keylist { display: block; }
+.sk-keygroup { padding: 12px 20px 4px; }
+.sk-keygroup h3 { margin: 0 0 4px; }
+/* a group whose rows are all filtered out goes with them */
+.sk-keygroup:not(:has(.sk-keyrow:not(.sk-keyfiltered):not(.sk-filtered-out))) { display: none; }
+.sk-keyfiltered { display: none !important; }
+.sk-keyrow {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; min-height: 44px;
+  padding: 6px 0; border-bottom: 1px solid var(--rule);
+}
+.sk-keygroup .sk-keyrow:last-child { border-bottom: 0; }
+.sk-keyaction { flex: 1 1 220px; min-width: 0; }
+.sk-keyhint { margin: 2px 0 0; font-size: 13px; color: var(--text); }
+.sk-keyhint::before { content: "⚠ "; }
+.sk-keycell { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; margin-left: auto; }
 .sk-keynote { font-size: 12px; color: var(--muted); }
+.sk-keychanged .annotation { font-weight: 600; }
+.sk-btn.sk-btn-small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 button.sk-kbd {
   min-width: 36px; min-height: 32px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
   font: 600 12px/1 var(--mono); background: var(--fill); color: var(--text); border: 1px solid var(--edge);
 }
-button.sk-kbd:hover { border-color: var(--accent); }
+button.sk-kbd:hover:not(:disabled) { border-color: var(--accent); }
+button.sk-kbd:disabled { cursor: default; }
 div.pressedKey { text-align: center; padding: 24px 0 8px; }
+div.pressedKey:focus { outline: none; }
 div.pressedKey kbd { font-size: 24px; padding: 14px 18px; min-width: 64px; }
+.sk-keyhints { margin: 8px 0 0; padding-left: 20px; min-height: 1.5em; }
+.sk-keyhints li { margin: 2px 0; }
+.sk-keyhints .sk-keywarn { font-weight: 600; }
 
 /* ---------- Search engines ---------- */
 .sk-list > .sk-switchrow { border-bottom: 1px solid var(--rule); }

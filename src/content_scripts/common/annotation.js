@@ -17,3 +17,26 @@ export function localizeAnnotation(locale, annotation) {
     });
     return formatted;
 }
+
+// The help groups a mapping's "#N" annotation prefix names, by N, as the usage
+// popup (frontend.js buildUsage) titles them.
+export const FEATURE_GROUPS = [
+    'Help',                  // 0
+    'Mouse Click',           // 1
+    'Scroll Page / Element', // 2
+    'Tabs',                  // 3
+    'Page Navigation',       // 4
+    'Sessions',              // 5
+    'Search selected with',  // 6
+    'Clipboard',             // 7
+    'Omnibar',               // 8
+    'Visual Mode',           // 9
+    'vim-like marks',        // 10
+    'Settings',              // 11
+    'Chrome URLs',           // 12
+    'Proxy',                 // 13
+    'Misc',                  // 14
+    'Insert Mode',           // 15
+    'Lurk Mode',             // 16
+    'Regional Hints Mode',   // 17
+];

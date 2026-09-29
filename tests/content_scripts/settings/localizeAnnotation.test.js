@@ -1,4 +1,4 @@
-import { localizeAnnotation } from '../../../src/content_scripts/common/annotation.js';
+import { FEATURE_GROUPS, localizeAnnotation } from '../../../src/content_scripts/common/annotation.js';
 
 describe('localizeAnnotation', () => {
     const upper = (s) => s.toUpperCase();
@@ -29,5 +29,17 @@ describe('localizeAnnotation', () => {
         [['#8Open Omnibar for {0} Search', 'google'], ['{1} and {0}', 'a', 'b'], ['{0}{0}', '$&']].forEach((a) => {
             expect(localizeAnnotation((s) => s, a)).toBe(a[0].format(...a.slice(1)));
         });
+    });
+});
+
+describe('FEATURE_GROUPS', () => {
+    test('are the groups the usage popup titles, in its order', () => {
+        const fs = require('fs');
+        const path = require('path');
+        const src = fs.readFileSync(path.join(__dirname, '../../../src/content_scripts/ui/frontend.js'), 'utf8');
+        const list = src.match(/var feature_groups = \[([\s\S]*?)\];/);
+        expect(list).not.toBeNull();
+        const names = [...list[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
+        expect(FEATURE_GROUPS).toEqual(names);
     });
 });
