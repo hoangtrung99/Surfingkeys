@@ -177,6 +177,7 @@ function createNormal(insert) {
 
     var _once = false;
     self.addEventListener('keydown', function(event) {
+        keyDown = true;
         var realTarget = getRealEdit(event);
         if (isEditable(realTarget) && event.isTrusted) {
             if (Mode.isSpecialKeyOf("<Esc>", event.sk_keyName)) {
@@ -240,6 +241,7 @@ function createNormal(insert) {
     });
     self.addEventListener('blur', function(event) {
         keyHeld = 0;
+        keyDown = false;
     });
     var _inFocusHandler = false;
     self.addEventListener('focus', function(event) {
@@ -263,6 +265,7 @@ function createNormal(insert) {
         _inFocusHandler = false;
     });
     self.addEventListener('keyup', function(event) {
+        keyDown = false;
         setTimeout(function() {
             keyHeld = 0;
         }, 0);
@@ -348,6 +351,10 @@ function createNormal(insert) {
 
     self.repeats = "";
     var keyHeld = 0;
+    // A key is down in this page: only then is a keyup coming to end a held scroll.
+    // A scroll run from elsewhere (Ok in the repeat prompt, a command in the omnibar,
+    // feedkeys) must not count as held, or it never stops until a page boundary.
+    var keyDown = false;
 
     var scrollNodes, scrollIndex = 0,
         lastKeys;
@@ -407,7 +414,7 @@ function createNormal(insert) {
                     previousTimestamp = 0,
                     originValue = elm[prop],
                     stepCompleted = false;
-                keyHeld = 1;
+                keyHeld = keyDown ? 1 : 0;
                 function step(t) {
                     if (previousTimestamp === 0) {
                         // init previousTimestamp in first step
