@@ -12,9 +12,15 @@ beforeAll(async () => {
     KeyboardUtils = require('../../src/content_scripts/common/keyboardUtils.js').default;
 }, BOOT_TIMEOUT);
 
+// every test starts from the default keymap and conf, whatever ran before it
+let restoreKeys;
+beforeEach(() => {
+    restoreKeys = h.keepKeys();
+});
 afterEach(() => {
     // leaves Insert mode as well as any pending keys
     h.press('<Esc>');
+    restoreKeys();
 });
 
 const requests = () => h.sent.filter((m) => m.action !== 'localData');
@@ -422,8 +428,13 @@ describe('Normal and Hints through the bridge', () => {
     });
 
     test('Hints.setCharacters changes the hint labels of the page', () => {
-        userScript((api) => api.Hints.setCharacters('abc'));
-        expect(h.hints.getCharacters()).toBe('abc');
+        const before = h.hints.getCharacters();
+        try {
+            userScript((api) => api.Hints.setCharacters('abc'));
+            expect(h.hints.getCharacters()).toBe('abc');
+        } finally {
+            h.hints.setCharacters(before);
+        }
     });
 
     // known bug hint-chars-skip-frontend: the bridge calls hints.setCharacters
@@ -477,7 +488,6 @@ describe('basic mode: key changes from the settings page', () => {
     });
 });
 
-// last: it empties the keymap for the rest of this file
 describe('unmapAllExcept', () => {
     test('for another domain it changes nothing', () => {
         userScript((api) => api.unmapAllExcept(['j', 'k'], /example\.com/));
