@@ -1,9 +1,10 @@
 // The theme menu, opened by ;T, :theme and "Change Theme…" in the Command
-// Palette: a row per built-in theme (common/themes.js) with a swatch of its
-// colours, the one in use marked. The page side (content_scripts/theme.js)
+// Palette: an Auto row (the system's light or dark setting picks from a pair),
+// then a row per built-in theme (common/themes.js) with a swatch of its
+// colours, the one picked marked. The page side (content_scripts/theme.js)
 // keeps the pick and sends the stylesheet this frame shows (applyBuiltinTheme).
 import { createElementWithContent, htmlEncode, setSanitizedContent } from '../common/utils.js';
-import { themeEntries } from '../common/themes.js';
+import { autoEntry, themeEntries } from '../common/themes.js';
 
 const ENTRIES = themeEntries();
 
@@ -17,10 +18,12 @@ export default function createThemeMenu(omnibar, front) {
         focusFirstCandidate: true,
         prompt: '',
     };
-    let current = null;
+    // the stored pick, which is Auto rather than the theme Auto draws
+    let current = null, pair = null;
 
     front._actions['applyBuiltinTheme'] = function(message) {
-        current = message.theme;
+        current = message.picked || message.theme;
+        pair = message.pair;
         setSanitizedContent(document.getElementById('sk_theme'), message.css);
     };
 
@@ -41,7 +44,7 @@ export default function createThemeMenu(omnibar, front) {
 
     function update() {
         const terms = fold(omnibar.input.value).split(/\s+/).filter((t) => t.length);
-        const entries = ENTRIES.filter((e) => terms.every((t) => fold(`${e.name} ${e.also}`).includes(t)));
+        const entries = [autoEntry(pair)].concat(ENTRIES).filter((e) => terms.every((t) => fold(`${e.name} ${e.also}`).includes(t)));
         omnibar.listResults(entries, render);
         const lis = Array.from(omnibar.resultsDiv.querySelectorAll('li'));
         lis.forEach((li) => {

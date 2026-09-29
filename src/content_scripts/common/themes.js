@@ -8,6 +8,12 @@ export const THEME_KEY = 'paletteTheme';
 export const DEFAULT_THEME = 'mocha';
 // Surfingkeys' own look (frontend.css), with none of the themes below
 export const NO_THEME = 'none';
+// Follow the system's light or dark setting with the pair kept under PAIR_KEY.
+// Builds without it read 'auto' as no pick at all and draw DEFAULT_THEME, and
+// never read PAIR_KEY, so neither key can break them.
+export const AUTO_THEME = 'auto';
+export const PAIR_KEY = 'paletteThemePair';
+export const DEFAULT_PAIR = {dark: 'mocha', light: 'latte'};
 
 // Every colour below is checked for 4.5:1 text contrast on the frosted panel
 // over both a white and a black page (the page shows through the glass).
@@ -132,7 +138,8 @@ function squash(name) {
     return String(name).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-const NAMES = new Map([['none', NO_THEME], ['off', NO_THEME], ['original', NO_THEME], ['surfingkeys', NO_THEME]]);
+const NAMES = new Map([['none', NO_THEME], ['off', NO_THEME], ['original', NO_THEME], ['surfingkeys', NO_THEME],
+    ['auto', AUTO_THEME], ['automatic', AUTO_THEME], ['system', AUTO_THEME]]);
 THEME_IDS.forEach((id) => {
     NAMES.set(id, id);
     NAMES.set(squash(PALETTES[id].name), id);
@@ -141,6 +148,45 @@ THEME_IDS.forEach((id) => {
 // The theme an id or a name refers to, or null.
 export function resolveTheme(name) {
     return NAMES.get(squash(name || '')) || null;
+}
+
+// The stored pair with each side checked: the dark side must be a dark theme and
+// the light side a light one, or that side is the default's.
+export function themePair(stored) {
+    const side = (kind, light) => {
+        const id = stored && stored[kind];
+        return PALETTES.hasOwnProperty(id) && PALETTES[id].light === light ? id : DEFAULT_PAIR[kind];
+    };
+    return {dark: side('dark', false), light: side('light', true)};
+}
+
+// The stored pick as the menus mark it: an unknown or missing one is the default.
+export function pickedTheme(stored) {
+    return stored === AUTO_THEME || stored === NO_THEME || PALETTES.hasOwnProperty(stored) ? stored : DEFAULT_THEME;
+}
+
+// The theme to draw for a stored pick: Auto takes one side of the pair.
+export function themeInUse(stored, pair, systemDark) {
+    const id = pickedTheme(stored);
+    if (id === AUTO_THEME) {
+        const p = themePair(pair);
+        return systemDark ? p.dark : p.light;
+    }
+    return id;
+}
+
+// "Auto (Catppuccin Mocha / Catppuccin Latte)"
+export function autoName(pair) {
+    const p = themePair(pair);
+    return `Auto (${PALETTES[p.dark].name} / ${PALETTES[p.light].name})`;
+}
+
+// The Auto row of the theme menu, its swatch half the dark theme, half the light one.
+export function autoEntry(pair) {
+    const p = themePair(pair);
+    const D = PALETTES[p.dark], L = PALETTES[p.light];
+    return {id: AUTO_THEME, name: autoName(p), bg: `linear-gradient(135deg, ${D.bg} 50%, ${L.surface || L.bg} 50%)`,
+        dots: [D.accent, L.accent, L.mauve], light: null, also: 'auto automatic system os follow'};
 }
 
 // One entry per choice, in menu order, as the theme menu and the settings page

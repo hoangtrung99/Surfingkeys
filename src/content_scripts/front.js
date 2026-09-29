@@ -83,9 +83,10 @@ function createFront(insert, normal, hints, visual, browser) {
         }
     }
 
-    self.setBuiltinTheme = function(id, css) {
+    // choice: {picked, pair}, the stored pick and Auto's pair, for the theme menu
+    self.setBuiltinTheme = function(id, css, choice) {
         // `theme`, not `id`: command() sets `id` to route the message
-        _builtinTheme = {action: 'applyBuiltinTheme', theme: id, css};
+        _builtinTheme = Object.assign({action: 'applyBuiltinTheme', theme: id, css}, choice);
         // sent straight away, not in a later callback: a banner that follows it
         // must find the new stylesheet already there
         if (frontendPromise && !_userTheme) {
