@@ -412,6 +412,15 @@ function createAPI(clipboard, insert, normal, hints, visual, front, browser) {
         });
     }
 
+    // The hint labels are drawn in the frontend frame too (hints in the omnibar,
+    // the frames list), so a change of characters reaches both, whichever world
+    // the settings run in.
+    const setHintsCharacters = function(chars) {
+        hints.setCharacters(chars);
+        if (front.setHintsCharacters) {
+            front.setHintsCharacters(chars);
+        }
+    };
     initSKFunctionListener("api", {
         addSearchAlias,
         imap,
@@ -438,7 +447,7 @@ function createAPI(clipboard, insert, normal, hints, visual, front, browser) {
             }
             return hints.create(cssSelector, onHintKey, attrs);
         },
-        "hints:setCharacters": hints.setCharacters,
+        "hints:setCharacters": setHintsCharacters,
         "hints:setNumeric": hints.setNumeric,
         "hints:style": hints.style,
         "front:registerInlineQuery": front.registerInlineQuery,
@@ -513,12 +522,7 @@ function createAPI(clipboard, insert, normal, hints, visual, front, browser) {
             dispatchMouseClick: hints.dispatchMouseClick,
             style: hints.style,
             setNumeric: hints.setNumeric,
-            setCharacters: function(chars) {
-                hints.setCharacters(chars);
-                if (front.setHintsCharacters) {
-                    front.setHintsCharacters(chars);
-                }
-            },
+            setCharacters: setHintsCharacters,
         },
         Visual: {
             style: visual.style,

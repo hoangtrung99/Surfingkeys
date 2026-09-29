@@ -437,10 +437,9 @@ describe('Normal and Hints through the bridge', () => {
         }
     });
 
-    // known bug hint-chars-skip-frontend: the bridge calls hints.setCharacters
-    // alone (api.js "hints:setCharacters"), so the frontend's tab hints (T) keep
-    // the default characters under MV3
-    test.failing('Hints.setCharacters changes the hint labels of the frontend too', async () => {
+    // under MV3 the bridge (api.js "hints:setCharacters") must reach the frontend,
+    // or its tab hints (T) keep the default characters
+    test('Hints.setCharacters changes the hint labels of the frontend too', async () => {
         userScript((api) => api.Hints.setCharacters('qwe'));
         await h.settle();
         expect(h.ui('setHintsCharacters')).toEqual([expect.objectContaining({ characters: 'qwe' })]);
