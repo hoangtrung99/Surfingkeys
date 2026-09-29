@@ -38,7 +38,7 @@ function boot({hash = '', stored = {}, browser = 'Chrome'} = {}) {
     modes = {};
     window.scrollTo = jest.fn();
     global.chrome = {
-        runtime: {getManifest: () => ({version: '9.9.9'}), id: 'ext'},
+        runtime: {getManifest: () => ({version: '9.9.9'}), id: 'ext', getURL: (p) => `chrome-extension://ext/${p}`},
         storage: {onChanged: {addListener: (fn) => storageListeners.push(fn)}},
         tabs: {create: jest.fn()},
     };
@@ -101,13 +101,14 @@ function loadSettings(settings, aliases) {
         edit(el) {
             el.append(document.createElement('textarea'));
             let value = '';
+            const session = {setMode() {}, on() {}, getAnnotations: () => []};
             editor = {container: el, setValue: jest.fn((v) => {
                 value = v;
             }), getValue: () => value, setTheme() {}, setOptions() {},
-            setKeyboardHandler() {}, getSession: () => ({setMode() {}}), resize() {}};
+            setKeyboardHandler() {}, getSession: () => session, resize() {}, on() {}};
             return editor;
         },
-        config: {loadModule() {}},
+        config: {loadModule() {}, set() {}, setModuleUrl() {}},
     };
     document.dispatchEvent(new CustomEvent('surfingkeys:userSettingsLoaded', {detail: {settings, frontCommand}}));
     return {normal, frontCommand};
