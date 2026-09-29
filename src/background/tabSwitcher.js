@@ -94,17 +94,14 @@ export default function installTabSwitcher(self, _response) {
         }
     });
 
-    // Tell the user once, at install, when another extension (jump, for example)
-    // already holds a shortcut: Chrome then leaves ours unassigned, silently.
+    // Install opens the welcome page, which also tells the user when another
+    // extension (jump, for example) already holds a shortcut -- Chrome then
+    // leaves ours unassigned, silently -- and opens the page to fix it. An
+    // update opens nothing.
     chrome.runtime.onInstalled.addListener((details) => {
-        if (details.reason !== 'install') {
-            return;
+        if (details.reason === 'install') {
+            chrome.tabs.create({url: chrome.runtime.getURL('/pages/start.html#welcome')});
         }
-        chrome.commands.getAll((cmds) => {
-            if ((cmds || []).some((c) => COMMANDS.hasOwnProperty(c.name) && !c.shortcut)) {
-                chrome.tabs.create({url: 'chrome://extensions/shortcuts'});
-            }
-        });
     });
 
     chrome.tabs.onActivated.addListener(({tabId, windowId}) => {
