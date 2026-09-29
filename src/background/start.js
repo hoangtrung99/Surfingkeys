@@ -849,10 +849,16 @@ function start(browser) {
         chrome.storage.sync.clear();
         loadSettings(null, function(data) {
             browser._applyProxySettings(data);
-            _response(message, sendResponse, {
-                settings: data
+            // The snippet is gone from storage, so the script that runs it goes before
+            // the reply: a page opened after the reset must not run the old code.
+            registerUserScript(null, () => {
+                _response(message, sendResponse, {
+                    settings: data
+                });
             });
-            _broadcastSettings(data);
+            // paletteTheme is cleared too; saying so makes open tabs fall back to the
+            // default theme as new tabs do, instead of keeping the old one.
+            _broadcastSettings(Object.assign({}, data, {paletteTheme: null}));
         });
     };
     self.loadSettingsFromUrl = function(message, sender, sendResponse) {
@@ -1544,23 +1550,28 @@ function start(browser) {
         message.url = 'view-source:' + sender.tab.url;
         self.openLink(message, sender, sendResponse);
     };
+    // callback(error): error is the userScripts API's message, or "" when the
+    // registered script now matches `snippets`
     function registerUserScript(snippets, callback) {
         if (!isUserScriptsAvailable()) {
-            callback && callback();
+            callback && callback("");
             return;
         }
         const userScriptId = "settingsSnippets";
+        const lastErrorMessage = () => chrome.runtime.lastError.message || String(chrome.runtime.lastError);
         const invokeCallback = () => {
+            let error = "";
             if (chrome.runtime.lastError) {
                 console.error("userScripts API error:", chrome.runtime.lastError);
+                error = lastErrorMessage();
             }
-            callback && callback();
+            callback && callback(error);
         };
         if (snippets) {
             chrome.userScripts.getScripts({ids:[userScriptId]}, (r) => {
                 if (chrome.runtime.lastError) {
                     console.error("userScripts.getScripts error:", chrome.runtime.lastError);
-                    callback && callback();
+                    callback && callback(lastErrorMessage());
                     return;
                 }
                 // The snippet goes in as a string that api.js compiles inside its
@@ -1586,7 +1597,7 @@ function start(browser) {
                     if (r[0].js[0].code !== code) {
                         chrome.userScripts.unregister({ids:[userScriptId]}, registerSettingSnippets);
                     } else {
-                        callback && callback();
+                        callback && callback("");
                     }
                 } else {
                     registerSettingSnippets();
@@ -1596,13 +1607,13 @@ function start(browser) {
             chrome.userScripts.getScripts({ids:[userScriptId]}, (r) => {
                 if (chrome.runtime.lastError) {
                     console.error("userScripts.getScripts error:", chrome.runtime.lastError);
-                    callback && callback();
+                    callback && callback(lastErrorMessage());
                     return;
                 }
                 if (r.length > 0) {
                     chrome.userScripts.unregister({ids:[userScriptId]}, invokeCallback);
                 } else {
-                    callback && callback();
+                    callback && callback("");
                 }
             });
         }
@@ -1696,6 +1707,31 @@ function start(browser) {
         }
         return false;
     }
+    /*
+     * Persist a change to the snippet or to advanced mode, then make the registered
+     * user script match what is stored, and only then reply. A page loads whatever
+     * script is registered when it starts, so a reply sent before this -- or a
+     * registration left to the next page's getSettings -- hands the first page
+     * opened after "Saved" the old code. A key the change does not carry keeps its
+     * stored value: a Save sends only the snippet, the toggle only the mode.
+     */
+    function _updateAndSyncUserScript(message, sendResponse) {
+        const saved = message.settings;
+        _updateAndPostSettings(saved, function() {
+            // read after the write: with localPath set, the stored snippet is the
+            // file's text, and _save has dropped the one in the message
+            loadSettings(['showAdvanced', 'snippets'], function(stored) {
+                const on = saved.hasOwnProperty('showAdvanced') ? saved.showAdvanced : stored.showAdvanced;
+                const snippets = saved.hasOwnProperty('snippets') ? saved.snippets : stored.snippets;
+                // stored either way, but a page opened now would not run it
+                registerUserScript(on ? snippets : null, (error) => {
+                    _response(message, sendResponse, {
+                        error: error ? "Saved, but the settings script could not be registered: " + error : ""
+                    });
+                });
+            });
+        });
+    }
     self.updateSettings = function(message, sender, sendResponse) {
         let error = "";
         if (message.scope === "snippets") {
@@ -1733,14 +1769,15 @@ function start(browser) {
                         csp: 'script-src \'self\' \'unsafe-eval\'',
                         messaging: true
                     });
-                    _updateAndPostSettings(message.settings);
-                    registerUserScript(message.settings.snippets, () => {
-                        _response(message, sendResponse, { error });
-                    });
+                    _updateAndSyncUserScript(message, sendResponse);
                     return;
                 } else {
                     error = "Advanced mode is only available when Developer mode is turned on from chrome://extensions/.";
                 }
+            } else if (isMV3 && isUserScriptsAvailable()
+                && (message.settings.hasOwnProperty('snippets') || message.settings.hasOwnProperty('showAdvanced'))) {
+                _updateAndSyncUserScript(message, sendResponse);
+                return;
             } else {
                 _updateAndPostSettings(message.settings);
             }

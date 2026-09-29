@@ -793,6 +793,166 @@ describe('start', () => {
             expect(sendResponse).toHaveBeenCalledWith({settings: expect.objectContaining({proxyMode: 'clear'})});
         });
 
+        it('unregisters the snippets user script before replying to a reset', () => {
+            const {chrome, dispatch} = bootstrap();
+            chrome.userScripts.getScripts = jest.fn((filter, cb) => cb([{id: 'settingsSnippets', js: [{code: 'old'}]}]));
+            let unregistered;
+            chrome.userScripts.unregister = jest.fn((filter, cb) => {
+                unregistered = cb;
+            });
+            const {sendResponse} = dispatch({action: 'resetSettings', needResponse: true}, senderFor(12));
+            expect(chrome.userScripts.unregister).toHaveBeenCalledWith({ids: ['settingsSnippets']}, expect.any(Function));
+            expect(sendResponse).not.toHaveBeenCalled();
+            unregistered();
+            expect(sendResponse).toHaveBeenCalledWith({settings: expect.objectContaining({proxyMode: 'clear'})});
+        });
+
+        it('tells open tabs to drop the picked theme on reset', () => {
+            const {dispatch, broadcasts} = bootstrap();
+            dispatch({action: 'resetSettings', needResponse: true}, senderFor(12));
+            expect(broadcasts()[0]).toMatchObject({paletteTheme: null, proxyMode: 'clear'});
+        });
+
+        describe('saving the snippet or the mode (MV3)', () => {
+            const snippetCode = (snippets) =>
+                `import('./api.js').then((module) => {module.default("chrome-extension://surfingkeys/", ` +
+                `(api, settings) => {${snippets}\n})});`;
+            // hold registration back, to see what is answered before it completes
+            const holdRegister = (chrome) => {
+                const held = {};
+                chrome.userScripts.register = jest.fn((scripts, cb) => {
+                    held.done = cb;
+                });
+                return held;
+            };
+
+            it('registers a snippet saved alone while advanced mode is on, before replying', () => {
+                const {chrome, dispatch, stored} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'old'}}});
+                const held = holdRegister(chrome);
+                const {sendResponse, kept} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {snippets: 'api.map("a", "b");', localPath: ''},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({snippets: 'api.map("a", "b");'});
+                expect(chrome.userScripts.register).toHaveBeenCalledWith(
+                    [expect.objectContaining({js: [{code: snippetCode('api.map("a", "b");')}]})], expect.any(Function));
+                expect(kept).toBe(true);
+                expect(sendResponse).not.toHaveBeenCalled();
+                held.done();
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+
+            it('keeps no script for a snippet saved in basic mode', () => {
+                const {chrome, dispatch, stored} = bootstrap({browser: {settings: {showAdvanced: false}}});
+                chrome.userScripts.getScripts = jest.fn((filter, cb) => cb([{id: 'settingsSnippets', js: [{code: 'old'}]}]));
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {snippets: 'api.map("a", "b");', localPath: ''},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({snippets: 'api.map("a", "b");'});
+                expect(chrome.userScripts.register).not.toHaveBeenCalled();
+                expect(chrome.userScripts.unregister).toHaveBeenCalledWith({ids: ['settingsSnippets']}, expect.any(Function));
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+
+            it('registers the stored snippet when advanced mode is switched on without one', () => {
+                const {chrome, dispatch} = bootstrap({browser: {settings: {snippets: 'api.unmap("x");'}}});
+                const held = holdRegister(chrome);
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {showAdvanced: true},
+                }, senderFor(12));
+                expect(chrome.userScripts.register).toHaveBeenCalledWith(
+                    [expect.objectContaining({js: [{code: snippetCode('api.unmap("x");')}]})], expect.any(Function));
+                expect(sendResponse).not.toHaveBeenCalled();
+                held.done();
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+
+            it('unregisters the snippet when advanced mode is switched off, before replying', () => {
+                const {chrome, dispatch, stored} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'code'}}});
+                chrome.userScripts.getScripts = jest.fn((filter, cb) => cb([{id: 'settingsSnippets', js: [{code: 'code'}]}]));
+                let unregistered;
+                chrome.userScripts.unregister = jest.fn((filter, cb) => {
+                    unregistered = cb;
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {showAdvanced: false},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({showAdvanced: false});
+                expect(sendResponse).not.toHaveBeenCalled();
+                unregistered();
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+
+            it('replies with the error when the snippet cannot be registered', () => {
+                const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+                const {chrome, dispatch, stored} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'old'}}});
+                chrome.userScripts.register = jest.fn((scripts, cb) => {
+                    chrome.runtime.lastError = {message: 'Script with ID settingsSnippets already exists'};
+                    cb();
+                    chrome.runtime.lastError = undefined;
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {snippets: 'new', localPath: ''},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({snippets: 'new'});
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Script with ID settingsSnippets already exists')});
+                error.mockRestore();
+            });
+
+            it('replies with the error when the snippet cannot be unregistered', () => {
+                const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+                const {chrome, dispatch} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'code'}}});
+                chrome.userScripts.getScripts = jest.fn((filter, cb) => cb([{id: 'settingsSnippets', js: [{code: 'code'}]}]));
+                chrome.userScripts.unregister = jest.fn((filter, cb) => {
+                    chrome.runtime.lastError = {message: 'unregister failed'};
+                    cb();
+                    chrome.runtime.lastError = undefined;
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {showAdvanced: false},
+                }, senderFor(12));
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('unregister failed')});
+                error.mockRestore();
+            });
+
+            it('leaves user scripts alone for settings that are neither', () => {
+                const {chrome, dispatch} = bootstrap({browser: {settings: {showAdvanced: true, snippets: 'code'}}});
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {basicMappings: {d: 'q'}},
+                }, senderFor(12));
+                expect(chrome.userScripts.getScripts).not.toHaveBeenCalled();
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+
+            it('does not touch user scripts on MV2', () => {
+                const {chrome, dispatch, stored} = bootstrap({
+                    chrome: {manifestVersion: 2},
+                    browser: {settings: {showAdvanced: true}},
+                });
+                const {sendResponse} = dispatch({
+                    action: 'updateSettings',
+                    needResponse: true,
+                    settings: {snippets: 'code', localPath: ''},
+                }, senderFor(12));
+                expect(stored()).toMatchObject({snippets: 'code'});
+                expect(chrome.userScripts.getScripts).not.toHaveBeenCalled();
+                expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            });
+        });
+
         it('returns a settings subset for a specific key', () => {
             const {dispatch} = bootstrap({browser: {settings: {blocklist: {x: 1}, marks: {m: 2}}}});
             const {sendResponse} = dispatch({action: 'getSettings', needResponse: true, key: 'marks'}, senderFor(12));
@@ -2774,7 +2934,7 @@ describe('start', () => {
                 settings: {showAdvanced: true, snippets: 'x'},
             }, senderFor(12));
             expect(error).toHaveBeenCalledWith(expect.stringContaining('getScripts'), expect.anything());
-            expect(sendResponse).toHaveBeenCalledWith({error: ''});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('nope')});
             error.mockRestore();
         });
 

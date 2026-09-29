@@ -4,15 +4,9 @@
 // keeps the pick and sends the stylesheet this frame shows (applyBuiltinTheme).
 import { RUNTIME } from '../common/runtime.js';
 import { createElementWithContent, htmlEncode, setSanitizedContent } from '../common/utils.js';
-import { NO_THEME, PALETTES, THEME_IDS } from '../common/themes.js';
+import { themeEntries } from '../common/themes.js';
 
-const ENTRIES = THEME_IDS.map((id) => {
-    const P = PALETTES[id];
-    return {id, name: P.name, bg: P.surface || P.bg, dots: [P.text, P.accent, P.mauve], also: `${id} ${P.light ? 'light' : 'dark'}`};
-}).concat({
-    // frontend.css: white panel, black text, red matches
-    id: NO_THEME, name: 'Surfingkeys', bg: '#ffffff', dots: ['#000000', '#b90c0c', '#4b3acc'], also: 'original none off light',
-});
+const ENTRIES = themeEntries();
 
 // "rose" finds "Rosé Pine"
 function fold(s) {

@@ -142,3 +142,16 @@ THEME_IDS.forEach((id) => {
 export function resolveTheme(name) {
     return NAMES.get(squash(name || '')) || null;
 }
+
+// One entry per choice, in menu order, as the theme menu and the settings page
+// list them: id, name, the swatch (bg and three dots), whether it is light, and
+// the extra words a search matches. Both lists come from here so they cannot drift.
+export function themeEntries() {
+    return THEME_IDS.map((id) => {
+        const P = PALETTES[id];
+        return {id, name: P.name, bg: P.surface || P.bg, dots: [P.text, P.accent, P.mauve], light: P.light, also: `${id} ${P.light ? 'light' : 'dark'}`};
+    }).concat({
+        // frontend.css: white panel, black text, red matches
+        id: NO_THEME, name: 'Surfingkeys', bg: '#ffffff', dots: ['#000000', '#b90c0c', '#4b3acc'], light: true, also: 'original none off light',
+    });
+}

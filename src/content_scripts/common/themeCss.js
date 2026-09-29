@@ -26,22 +26,11 @@ const svgIcon = (body, color) => `url("data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${color}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${body}</svg>`
 )}")`;
 
-// The stylesheet of every surface inside the Surfingkeys frontend frame.
-export function themeCss(P) {
-    const ICON = {
-        search: svgIcon("<circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/>", P.overlay),
-        // one neutral stroke colour for every glyph: the type is in the shape, not in a hue
-        clock: svgIcon("<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>", P.overlay),
-        star: svgIcon("<path d='M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z'/>", P.overlay),
-        globe: svgIcon("<circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/>", P.overlay),
-        folder: svgIcon("<path d='M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/>", P.overlay),
-        bolt: svgIcon("<path d='M13 3 5 13.5h6L10 21l8-10.5h-6z'/>", P.overlay),
-    };
-    const PANELS = '#sk_omnibar, #sk_tabs.vertical, #sk_tabs.inline, #sk_tabs.horizontal, #sk_tabs:has(div.sk_tab_group),' +
-        ' #sk_usage, #sk_popup, #sk_keystroke, #sk_status, #sk_banner, #sk_bubble, #sk_switcher .sk_switcher_hud';
-
-    const css = `
-:root {
+// The custom properties every built-in theme style is written against. `scope` is
+// the selector they are declared on: a settings-page preview card declares one
+// theme's set on itself, so the card is drawn in that theme inside a page in another.
+export function themeTokens(P, scope = ':root') {
+    return `${scope} {
   --bg: ${P.bg}; --mantle: ${P.mantle}; --crust: ${P.crust};
   --s0: ${P.s0}; --s1: ${P.s1}; --s2: ${P.s2};
   --overlay: ${P.overlay}; --sub: ${P.sub}; --text: ${P.text};
@@ -70,7 +59,57 @@ export function themeCss(P) {
   --sel: ${mix("--accent", P.sel || (P.light ? 16 : 18))};
   --sheen: inset 0 1px 0 ${P.light ? "rgba(255, 255, 255, .85)" : "rgba(255, 255, 255, .06)"};
   --lift: 0 24px 60px -16px var(--shadow), 0 8px 20px -10px var(--shadow);
+}`;
 }
+
+// Ace ships a light theme; this re-tints an editor mounted at `scope` (and Ace's
+// autocomplete popup) with the tokens above.
+export function aceCss(scope) {
+    return `/* vim editor (ACE ships a light theme; everything below re-tints it) */
+${scope} {
+  padding: 0; overflow: hidden; border-radius: 14px; min-height: 44px;
+  background: var(--bg) !important; color: var(--text);
+  border: 1px solid var(--edge); box-shadow: var(--sheen), var(--lift);
+  font-family: var(--mono) !important;
+}
+${scope} .ace_gutter { background: var(--mantle); color: var(--faint); }
+${scope} .ace_gutter-active-line { background: var(--fill); color: var(--text); }
+${scope} .ace_print-margin { background: transparent; }
+${scope} .ace_marker-layer .ace_active-line { background: var(--hover); }
+${scope} .ace_marker-layer .ace_selection { background: ${mix("--accent", 32)}; }
+${scope} .ace_marker-layer .ace_selected-word { background: transparent; border: 1px solid ${mix("--accent", 50)}; }
+${scope} .ace_marker-layer .ace_bracket { border-color: var(--s2); }
+${scope} .ace_cursor { color: var(--accent); }
+${scope}.normal-mode .ace_cursor { background-color: ${mix("--accent", 55)}; border: 0; }
+${scope}.normal-mode .ace_hidden-cursors .ace_cursor { background: transparent; border: 1px solid var(--accent); }
+${scope} .ace_dialog { background: var(--mantle); color: var(--text); border-top: 1px solid var(--rule); padding: 4px 10px; }
+${scope} .ace_dialog input { color: var(--text); font-family: var(--mono); }
+/* red on the dialog fails 4.5:1 in Nord, Dawn and Latte */
+${scope} .cm-vim-message { color: var(--text) !important; }
+${scope} .ace_scrollbar { scrollbar-color: var(--fill) transparent; }
+.ace_editor.ace_autocomplete { background: var(--bg); color: var(--text); border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--lift); }
+.ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line { background: var(--sel); }
+.ace_editor.ace_autocomplete .ace_line-hover { background: var(--hover); border-color: transparent; }
+/* weight, not colour: accent on a selected row fails 4.5:1 in the light themes */
+.ace_editor.ace_autocomplete .ace_completion-highlight { color: inherit; font-weight: 700; }`;
+}
+
+// The stylesheet of every surface inside the Surfingkeys frontend frame.
+export function themeCss(P) {
+    const ICON = {
+        search: svgIcon("<circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/>", P.overlay),
+        // one neutral stroke colour for every glyph: the type is in the shape, not in a hue
+        clock: svgIcon("<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>", P.overlay),
+        star: svgIcon("<path d='M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z'/>", P.overlay),
+        globe: svgIcon("<circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/>", P.overlay),
+        folder: svgIcon("<path d='M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/>", P.overlay),
+        bolt: svgIcon("<path d='M13 3 5 13.5h6L10 21l8-10.5h-6z'/>", P.overlay),
+    };
+    const PANELS = '#sk_omnibar, #sk_tabs.vertical, #sk_tabs.inline, #sk_tabs.horizontal, #sk_tabs:has(div.sk_tab_group),' +
+        ' #sk_usage, #sk_popup, #sk_keystroke, #sk_status, #sk_banner, #sk_bubble, #sk_switcher .sk_switcher_hud';
+
+    const css = `
+${themeTokens(P)}
 body { font-family: var(--font); -webkit-font-smoothing: antialiased; }
 ${DIM_PAGE ? `
 body:has(> #sk_omnibar:not([style*="none"])),
@@ -372,33 +411,7 @@ ${SHOW_FOOTER ? `
 #sk_usage > p { grid-column: 1 / -1; margin: 0; }
 #sk_usage a { color: var(--accent-text) !important; }
 
-/* vim editor (ACE ships a light theme; everything below re-tints it) */
-#sk_editor {
-  padding: 0; overflow: hidden; border-radius: 14px; min-height: 44px;
-  background: var(--bg) !important; color: var(--text);
-  border: 1px solid var(--edge); box-shadow: var(--sheen), var(--lift);
-  font-family: var(--mono) !important;
-}
-#sk_editor .ace_gutter { background: var(--mantle); color: var(--faint); }
-#sk_editor .ace_gutter-active-line { background: var(--fill); color: var(--text); }
-#sk_editor .ace_print-margin { background: transparent; }
-#sk_editor .ace_marker-layer .ace_active-line { background: var(--hover); }
-#sk_editor .ace_marker-layer .ace_selection { background: ${mix("--accent", 32)}; }
-#sk_editor .ace_marker-layer .ace_selected-word { background: transparent; border: 1px solid ${mix("--accent", 50)}; }
-#sk_editor .ace_marker-layer .ace_bracket { border-color: var(--s2); }
-#sk_editor .ace_cursor { color: var(--accent); }
-#sk_editor.normal-mode .ace_cursor { background-color: ${mix("--accent", 55)}; border: 0; }
-#sk_editor.normal-mode .ace_hidden-cursors .ace_cursor { background: transparent; border: 1px solid var(--accent); }
-#sk_editor .ace_dialog { background: var(--mantle); color: var(--text); border-top: 1px solid var(--rule); padding: 4px 10px; }
-#sk_editor .ace_dialog input { color: var(--text); font-family: var(--mono); }
-/* red on the dialog fails 4.5:1 in Nord, Dawn and Latte */
-#sk_editor .cm-vim-message { color: var(--text) !important; }
-#sk_editor .ace_scrollbar { scrollbar-color: var(--fill) transparent; }
-.ace_editor.ace_autocomplete { background: var(--bg); color: var(--text); border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--lift); }
-.ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line { background: var(--sel); }
-.ace_editor.ace_autocomplete .ace_line-hover { background: var(--hover); border-color: transparent; }
-/* weight, not colour: accent on a selected row fails 4.5:1 in the light themes */
-.ace_editor.ace_autocomplete .ace_completion-highlight { color: inherit; font-weight: 700; }
+${aceCss('#sk_editor')}
 
 /* =====================================================================
    TAB CHOOSER (T): always a centred panel. Long lists become columns so

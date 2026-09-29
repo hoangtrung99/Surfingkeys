@@ -14,6 +14,7 @@ import {
     setSanitizedContent,
     mapInMode
 } from '../common/utils.js';
+import { localizeAnnotation } from '../common/annotation.js';
 import { RUNTIME, runtime } from '../common/runtime.js';
 import KeyboardUtils from '../common/keyboardUtils';
 import Mode from '../common/mode';
@@ -375,15 +376,6 @@ const Front = (function() {
             });
         });
     };
-
-    function localizeAnnotation(locale, annotation) {
-        if (annotation.constructor.name === "Array") {
-            const fmt = annotation[0];
-            return locale(fmt).format(...annotation.slice(1));
-        } else {
-            return locale(annotation);
-        }
-    }
 
     function buildUsage(metas, cb) {
         var feature_groups = [

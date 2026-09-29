@@ -1,0 +1,259 @@
+/* The settings page (options.html). Every colour is a token of the built-in
+   themes (themeCss.js themeTokens), which options/shell.js sets for the picked
+   theme in #sk_settings_tokens. */
+
+/* First paint only, until that runs: the tokens the page uses, from GitHub Light
+   and Catppuccin Mocha, the pair Surfingkeys' own look follows. */
+:root {
+  --mantle: #f6f8fa; --surface: #ffffff; --text: #1f2328; --sub: #424a53; --muted: var(--sub);
+  --accent: #0969da; --accent-text: #0550ae; --on-accent: #ffffff;
+  --edge: rgba(0, 0, 0, .1); --rule: rgba(0, 0, 0, .07); --fill: rgba(0, 0, 0, .055); --hover: rgba(0, 0, 0, .04);
+  --sel: color-mix(in srgb, var(--accent) 16%, transparent);
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mantle: #181825; --surface: #1e1e2e; --text: #cdd6f4; --sub: #bac2de;
+    --accent: #89b4fa; --accent-text: #89b4fa; --on-accent: #11111b;
+    --edge: color-mix(in srgb, var(--text) 13%, transparent); --rule: color-mix(in srgb, var(--text) 8%, transparent);
+    --fill: color-mix(in srgb, var(--text) 8%, transparent); --hover: color-mix(in srgb, var(--text) 5%, transparent);
+    --sel: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+/* Focus scrolls clear of the sticky header: shell.js sets --sk-header-h from
+   its measured height, which grows when the header wraps. */
+html { background: var(--mantle); scroll-padding-top: calc(var(--sk-header-h, 61px) + 12px); }
+body {
+  margin: 0; background: var(--mantle); color: var(--text);
+  font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-text); text-underline-offset: 2px; }
+h1, h2, h3 { line-height: 1.25; }
+h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+p { margin: 0 0 8px; }
+code, kbd { font-family: var(--mono); }
+kbd {
+  display: inline-block; font: 600 11px/1 var(--mono); padding: 4px 6px; border-radius: 6px;
+  background: var(--fill); color: var(--text); border: 0; box-shadow: none; white-space: nowrap;
+}
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h2:focus, main:focus { outline: none; }
+.sk-vh {
+  position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.sk-muted { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-section:not([hidden]) { animation: sk-fade .12s ease-out; }
+}
+@keyframes sk-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- skip link, header ---------- */
+.sk-skip {
+  position: absolute; left: 16px; top: -64px; z-index: 10; padding: 8px 12px; border-radius: 8px;
+  background: var(--surface); color: var(--accent-text); border: 1px solid var(--edge);
+}
+.sk-skip:focus { top: 8px; }
+.sk-header {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  padding: 12px max(16px, calc((100% - 1040px) / 2 + 16px));
+  background: var(--mantle); border-bottom: 1px solid var(--rule);
+}
+.sk-brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+.sk-brand h1 { margin: 0; font-size: 18px; font-weight: 650; }
+.sk-version { font: 12px var(--mono); color: var(--muted); }
+.sk-find { flex: 0 1 300px; min-width: 0; }
+.sk-find input { width: 100%; }
+.sk-mode {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 4px 12px; border-radius: 999px;
+  background: var(--fill); color: var(--text); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+.sk-mode.sk-mode-advanced { background: var(--sel); }
+
+/* ---------- layout: sidebar + one section ---------- */
+.sk-layout {
+  display: grid; grid-template-columns: 200px minmax(0, 760px); gap: 32px; justify-content: center;
+  max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px;
+}
+@media (min-width: 900px) { .sk-layout { grid-template-columns: 232px minmax(0, 760px); } }
+.sk-nav { position: sticky; top: 80px; align-self: start; }
+.sk-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-nav a {
+  display: flex; align-items: center; min-height: 36px; padding: 6px 12px; border-radius: 8px;
+  color: var(--text); font-weight: 500; text-decoration: none;
+}
+.sk-nav a:hover { background: var(--hover); }
+.sk-nav a[aria-current="page"] { background: var(--sel); font-weight: 600; }
+.sk-main { min-width: 0; }
+.sk-section h2 { margin: 0 0 4px; font-size: 22px; font-weight: 650; }
+.sk-lead { margin: 0 0 20px; color: var(--muted); }
+.sk-filtering .sk-section { margin-bottom: 32px; }
+.sk-filtered-out { display: none !important; }
+/* below 720px (Firefox shows the page inside about:addons) the sidebar becomes a
+   strip of tabs: only the strip scrolls sideways, never the page */
+@media (max-width: 719px) {
+  .sk-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding-top: 12px; }
+  .sk-nav { position: static; margin: 0 -16px; min-width: 0; }
+  .sk-nav ul { flex-direction: row; overflow-x: auto; padding: 0 16px 6px; scrollbar-width: thin; }
+  .sk-nav a { white-space: nowrap; }
+  .sk-find { flex: 1 1 100%; order: 3; }
+}
+
+/* ---------- building blocks ---------- */
+.sk-card {
+  background: var(--surface); border: 1px solid var(--edge); border-radius: 12px;
+  padding: 16px 20px; margin: 0 0 16px; min-width: 0;
+}
+.sk-card > :last-child { margin-bottom: 0; }
+.sk-note { margin: 0 0 16px; padding: 12px 16px; border-radius: 10px; background: var(--fill); }
+.sk-note p:last-child { margin-bottom: 8px; }
+.sk-warn { box-shadow: inset 3px 0 0 var(--peach); }
+.sk-error { margin: 6px 0 0; color: var(--text); font-weight: 600; }
+.sk-error::before { content: "⚠ "; }
+.sk-label { display: block; margin: 0 0 4px; font-weight: 600; }
+.sk-input, .sk-find input {
+  min-height: 36px; max-width: 100%; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--edge); background: var(--surface); color: var(--text); font: inherit;
+}
+.sk-card .sk-input { background: var(--mantle); }
+input.sk-input[type="text"] { width: 100%; }
+input.sk-input[aria-invalid="true"] { border-color: var(--red, #cf222e); }
+.sk-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 14px; border-radius: 8px;
+  border: 1px solid var(--edge); background: var(--surface); color: var(--text);
+  font: 500 14px/1.2 var(--font); cursor: pointer;
+}
+.sk-btn:hover { background: color-mix(in srgb, var(--text) 6%, var(--surface)); }
+.sk-btn:disabled { cursor: default; opacity: .6; }
+.sk-btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.sk-btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+/* marked by its border: a red fill with readable text is not possible in every theme */
+.sk-btn-danger { border-color: var(--red, #cf222e); }
+.sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.sk-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.sk-field { min-width: 0; }
+.sk-grow { flex: 1 1 220px; }
+.sk-help { margin: 8px 0; }
+.sk-help summary { cursor: pointer; color: var(--accent-text); }
+.sk-help p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.sk-check { display: flex; align-items: center; gap: 8px; }
+.sk-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+
+/* a checkbox drawn as a switch, always next to a visible label */
+.sk-switchrow { display: flex; align-items: center; gap: 12px; min-height: 40px; }
+.sk-switch {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative; margin: 0;
+  width: 38px; height: 22px; border-radius: 999px; cursor: pointer;
+  background: color-mix(in srgb, var(--text) 30%, var(--surface)); transition: background-color .12s;
+}
+.sk-switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface); transition: transform .12s;
+}
+.sk-switch:checked { background: var(--accent); }
+.sk-switch:checked::before { transform: translateX(16px); background: var(--on-accent); }
+.sk-switch:disabled { cursor: default; opacity: .5; }
+.sk-switchlabel { font-weight: 500; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .sk-switch, .sk-switch::before { transition: none; } }
+
+/* ---------- dialogs ---------- */
+.sk-dialog {
+  width: min(520px, calc(100vw - 32px)); padding: 20px 24px; border-radius: 14px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--edge);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, .45);
+}
+.sk-dialog::backdrop { background: rgba(0, 0, 0, .4); }
+.sk-dialog h3 { font-size: 17px; margin-bottom: 8px; }
+.sk-dialog .sk-actions { justify-content: flex-end; }
+.sk-resetlist { margin: 0 0 12px; padding-left: 20px; }
+
+/* ---------- Appearance ---------- */
+.sk-themes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 164px), 1fr)); gap: 12px;
+  margin: 0; padding: 0; border: 0; min-width: 0;
+}
+.sk-theme-card {
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 10px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--edge); cursor: pointer;
+}
+.sk-theme-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--edge)); }
+.sk-theme-card:has(input:checked) { background: var(--sel); box-shadow: inset 0 0 0 2px var(--accent); border-color: transparent; }
+.sk-theme-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sk-theme-meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: baseline; padding: 0 2px; }
+.sk-theme-name { font-weight: 600; }
+.sk-theme-kind { grid-row: 2; color: var(--muted); font-size: 13px; }
+.sk-theme-inuse { visibility: hidden; grid-column: 2; grid-row: 1; font-size: 12px; font-weight: 600; color: var(--text); }
+.sk-theme-card:has(input:checked) .sk-theme-inuse { visibility: visible; }
+/* a tiny omnibar, in the card's own theme (its tokens are declared on it) */
+.sk-preview {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 9px; pointer-events: none;
+  background: var(--surface); color: var(--text); border: 1px solid var(--edge); font: 12px/1.3 var(--font);
+}
+.sk-pv-bar { display: flex; align-items: center; gap: 6px; padding: 3px 6px 7px; border-bottom: 1px solid var(--rule); font-size: 13px; }
+.sk-pv-icon { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+.sk-pv-row { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px; min-width: 0; white-space: nowrap; }
+.sk-pv-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.sk-pv-url { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.sk-pv-focused { background: var(--sel); }
+.sk-pv-hint { font: 700 10px/1.4 var(--mono); padding: 0 4px; border-radius: 4px; background: var(--hint-bg); color: var(--hint-fg); }
+.sk-preview kbd { margin-left: auto; padding: 3px 5px; font-size: 10px; }
+
+/* ---------- Keys ---------- */
+.sk-keylist { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 24px; }
+.sk-keyrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
+  padding: 4px 0; border-bottom: 1px solid var(--rule);
+}
+.sk-keyrow .annotation { flex: 1; min-width: 0; }
+.sk-keycell { display: flex; align-items: center; gap: 8px; flex: none; }
+.sk-keynote { font-size: 12px; color: var(--muted); }
+button.sk-kbd {
+  min-width: 36px; min-height: 32px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  font: 600 12px/1 var(--mono); background: var(--fill); color: var(--text); border: 1px solid var(--edge);
+}
+button.sk-kbd:hover { border-color: var(--accent); }
+div.pressedKey { text-align: center; padding: 24px 0 8px; }
+div.pressedKey kbd { font-size: 24px; padding: 14px 18px; min-width: 64px; }
+
+/* ---------- Search engines ---------- */
+.sk-list > .sk-switchrow { border-bottom: 1px solid var(--rule); }
+.sk-list > .sk-switchrow:last-child { border-bottom: 0; }
+.sk-list .sk-switchlabel { flex: 1; min-width: 0; }
+.sk-aliaskeys { color: var(--muted); white-space: nowrap; }
+
+/* ---------- Advanced ---------- */
+.sk-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.sk-toolbar h3 { margin: 0 auto 0 0; }
+.sk-save-status { color: var(--muted); font-size: 13px; }
+#mappings_container { margin-top: 12px; }
+#advancedSetting #mappings {
+  width: 100%; height: min(62vh, 640px); min-height: 280px; font-size: 13px;
+  border-radius: 10px; box-shadow: none;
+}
+/* the Ace theme's syntax colours are for a light page; dark pages get the theme's own */
+[data-scheme="dark"] #mappings .ace_keyword, [data-scheme="dark"] #mappings .ace_storage { color: var(--mauve); }
+[data-scheme="dark"] #mappings .ace_string, [data-scheme="dark"] #mappings .ace_regexp { color: var(--green); }
+[data-scheme="dark"] #mappings .ace_comment { color: var(--overlay); font-style: italic; }
+[data-scheme="dark"] #mappings .ace_constant, [data-scheme="dark"] #mappings .ace_numeric { color: var(--peach); }
+[data-scheme="dark"] #mappings .ace_support.ace_function, [data-scheme="dark"] #mappings .ace_entity.ace_name { color: var(--blue); }
+[data-scheme="dark"] #mappings .ace_variable, [data-scheme="dark"] #mappings .ace_identifier { color: var(--text); }
+[data-scheme="dark"] #mappings .ace_paren, [data-scheme="dark"] #mappings .ace_punctuation { color: var(--sub); }
+
+/* ---------- Proxy ---------- */
+.proxyPair h3 { margin-top: 16px; }
+.sk-field-end { align-self: flex-end; }
+.sk-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; padding: 0; }
+.sk-chip {
+  min-height: 32px; padding: 4px 10px; border-radius: 999px; cursor: pointer; max-width: 100%; overflow-wrap: anywhere;
+  font: 500 13px var(--mono); background: var(--fill); color: var(--text); border: 1px solid var(--edge);
+}
+.sk-chip:hover { border-color: var(--accent); }
+
+/* ---------- About ---------- */
+.sk-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 8px 0 12px; }
+.sk-about dt { color: var(--muted); }
+.sk-about dd { margin: 0; overflow-wrap: anywhere; }
