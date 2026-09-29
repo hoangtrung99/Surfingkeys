@@ -816,7 +816,7 @@ describe('start', () => {
         describe('saving the snippet or the mode (MV3)', () => {
             const snippetCode = (snippets) =>
                 `import('./api.js').then((module) => {module.default("chrome-extension://surfingkeys/", ` +
-                `(api, settings) => {${snippets}\n})});`;
+                `${JSON.stringify(snippets)})});`;
             // hold registration back, to see what is answered before it completes
             const holdRegister = (chrome) => {
                 const held = {};
