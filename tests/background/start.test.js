@@ -3256,6 +3256,55 @@ describe('start', () => {
         });
     });
 
+    describe('another tab\'s page as Markdown (getTabMarkdown)', () => {
+        // the tab's answer (front.js runtime.on('getTabMarkdown')), or the error
+        // Chrome sets when nothing in the tab answers
+        const askTab = (tabId, {reply, lastError} = {}, sender = senderFor(12)) => {
+            const {chrome, dispatch} = bootstrap();
+            chrome.tabs.sendMessage.mockImplementation((id, message, options, cb) => {
+                chrome.runtime.lastError = lastError && {message: lastError};
+                try {
+                    cb(reply);
+                } finally {
+                    chrome.runtime.lastError = undefined;
+                }
+            });
+            const {sendResponse} = dispatch(runtimeMessage('getTabMarkdown', {tabId}, true), sender);
+            return {chrome, answer: sendResponse.mock.calls[0][0]};
+        };
+
+        it('asks the top frame of that tab', () => {
+            const {chrome, answer} = askTab(13, {reply: {markdown: '# C'}});
+            expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(13, {subject: 'getTabMarkdown'}, {frameId: 0}, expect.any(Function));
+            expect(answer).toEqual({markdown: '# C', error: undefined, self: false});
+        });
+
+        it('flags the asking tab\'s own page', () => {
+            expect(askTab(12, {reply: {markdown: '# B'}}).answer.self).toBe(true);
+        });
+
+        it('passes on the tab\'s own error with what it has', () => {
+            expect(askTab(13, {reply: {error: 'too big'}}).answer).toEqual({markdown: '', error: 'too big', self: false});
+        });
+
+        it.each([
+            ['no tab id', {}, 'no tab id was given', 'x'],
+            ['no content script', {lastError: 'Could not establish connection. Receiving end does not exist.'}, 'Could not establish connection. Receiving end does not exist.', 13],
+            ['no answer', {}, 'the tab did not answer', 13],
+        ])('%s is an error', (name, page, error, tabId) => {
+            expect(askTab(tabId, page).answer).toEqual({error});
+        });
+
+        it('a tab that throws is an error', () => {
+            const {chrome, dispatch} = bootstrap();
+            chrome.tabs.sendMessage.mockImplementation(() => {
+                throw new Error('No tab with id: 99.');
+            });
+            const {sendResponse} = dispatch(runtimeMessage('getTabMarkdown', {tabId: 99}, true), senderFor(12));
+            expect(sendResponse).toHaveBeenCalledWith({error: 'No tab with id: 99.'});
+        });
+    });
+
     describe('tab history housekeeping', () => {
         it('forgets a closed tab from the history', () => {
             const {chrome, dispatch} = bootstrap();

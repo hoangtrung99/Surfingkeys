@@ -272,12 +272,15 @@ describe('llmtools', () => {
 
         test('times out instead of hanging when the background never answers', async () => {
             jest.useFakeTimers();
-            mockRUNTIME.mockImplementation(() => {});
-            const pending = tools.run('list_tabs', {});
-            jest.advanceTimersByTime(20000);
-            const result = await pending;
-            expect(result).toContain('timed out');
-            jest.useRealTimers();
+            try {
+                mockRUNTIME.mockImplementation(() => {});
+                const pending = tools.run('list_tabs', {});
+                jest.advanceTimersByTime(20000);
+                const result = await pending;
+                expect(result).toContain('timed out');
+            } finally {
+                jest.useRealTimers();
+            }
         });
     });
 
@@ -1964,13 +1967,16 @@ describe('llmtools', () => {
          */
         test('still describes the call when the lookup times out', async () => {
             jest.useFakeTimers();
-            mockRUNTIME.mockImplementation(() => {});
-            const pending = tools.explain('group_tabs', { tabIds: [11] });
-            jest.advanceTimersByTime(20000);
-            const { action } = await pending;
+            try {
+                mockRUNTIME.mockImplementation(() => {});
+                const pending = tools.explain('group_tabs', { tabIds: [11] });
+                jest.advanceTimersByTime(20000);
+                const { action } = await pending;
 
-            expect(action).toContain('tab ids 11');
-            jest.useRealTimers();
+                expect(action).toContain('tab ids 11');
+            } finally {
+                jest.useRealTimers();
+            }
         });
 
         test('a long title is cut rather than allowed to fill the prompt', async () => {
