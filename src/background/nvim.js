@@ -16,6 +16,9 @@ function generatePassword() {
 // `instance` (a promise of {url, nm}) is DELETED when the editor is unavailable --
 // its absence is how the rest of the extension knows.
 //
+// `failure` is the browser's reason for the last disconnect, which the neovim page
+// shows when there is no `instance`.
+//
 // `ready` means the host has answered, and the editor is offered on that: a pending
 // or dropped connection may have no host behind it.
 //
@@ -49,6 +52,9 @@ function createNvimServer() {
     // Resolver of a pending `instance`, so every attempt of one retry run settles
     // the SAME promise a caller is already holding.
     let settleInstance = null;
+    // Its rejecter: a caller that asked before the first attempt failed (the neovim
+    // page waking the service worker) is told why, instead of waiting forever.
+    let failInstance = null;
 
     // An `instance` left resolved across a retry hands out the port that just died,
     // so a pending one takes its place before each attempt.
@@ -56,9 +62,12 @@ function createNvimServer() {
         if (settleInstance) {
             return;
         }
-        nvimServer.instance = new Promise((resolve) => {
+        nvimServer.instance = new Promise((resolve, reject) => {
             settleInstance = resolve;
+            failInstance = reject;
         });
+        // Nothing need be waiting on it.
+        nvimServer.instance.catch(() => {});
     }
 
     function rejectPending(reason) {
@@ -117,6 +126,7 @@ function createNvimServer() {
             }
             const failure = reason || "the connection to neovim was lost";
             lastFailure = failure;
+            nvimServer.failure = failure;
             markUnreachable(new Error(failure));
             // A request on a dead port is never answered. One made during the wait
             // below is refused by `port` being null, since `reachable` stays resolved
@@ -128,8 +138,12 @@ function createNvimServer() {
                 reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
                 setTimeout(startNative, delay);
             } else {
+                if (failInstance) {
+                    failInstance(new Error(failure));
+                }
                 delete nvimServer.instance;
                 settleInstance = null;
+                failInstance = null;
                 LOG("warn", "Failed to connect neovim"
                     + (reason ? ": " + reason : "")
                     + ". See src/nvim/server/Readme.md to install the native"
@@ -153,6 +167,7 @@ function createNvimServer() {
                     if (settleInstance) {
                         const settle = settleInstance;
                         settleInstance = null;
+                        failInstance = null;
                         settle({url, nm});
                     }
                 }

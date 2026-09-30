@@ -139,6 +139,16 @@ describe('createNvimServer', () => {
             expect(nvimServer.ready).toBe(false);
         });
 
+        it('tells a caller already holding the instance why the host never came', async () => {
+            const nvimServer = createNvimServer();
+            // The neovim page woke the service worker and asked before the browser
+            // reported the missing host.
+            const held = nvimServer.instance;
+            port.drop({message: 'Specified native messaging host not found.'});
+            await expect(held).rejects.toThrow('Specified native messaging host not found.');
+            expect(nvimServer.failure).toBe('Specified native messaging host not found.');
+        });
+
         it('lets a caller that has given up release its request', async () => {
             const nvimServer = createNvimServer();
             port.start();

@@ -2653,7 +2653,23 @@ describe('start', () => {
             const {dispatch} = bootstrap({browser: {nvimServer}});
             const {sendResponse} = dispatch({action: 'connectNative', needResponse: true}, senderFor(12));
             await flushPromises();
-            expect(sendResponse).toHaveBeenCalledWith({error: new Error('no nvim')});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Neovim is not available: no nvim.')});
+        });
+
+        it('answers even when neovim could not be started, so the page is never left blank', () => {
+            const nvimServer = {failure: 'Specified native messaging host not found.'};
+            const {dispatch} = bootstrap({browser: {nvimServer}});
+            const {sendResponse} = dispatch({action: 'connectNative', needResponse: true}, senderFor(12));
+            const {error} = sendResponse.mock.calls[0][0];
+            expect(error).toContain('Neovim is not available: Specified native messaging host not found.<');
+            expect(error).toContain('Readme.md');
+        });
+
+        it('escapes the browser reason it shows', () => {
+            const nvimServer = {failure: '<img src=x onerror=alert(1)>'};
+            const {dispatch} = bootstrap({browser: {nvimServer}});
+            const {sendResponse} = dispatch({action: 'connectNative', needResponse: true}, senderFor(12));
+            expect(sendResponse.mock.calls[0][0].error).toContain('&lt;img src=x onerror=alert(1)&gt;');
         });
 
         it('advertises neovim support in the full settings payload', () => {

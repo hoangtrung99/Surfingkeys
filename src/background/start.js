@@ -2602,9 +2602,22 @@ function start(browser) {
                     url,
                 });
             }).catch((error) => {
-                _response(message, sendResponse, {
-                    error,
-                });
+                neovimUnavailable(error && error.message);
+            });
+        } else {
+            // No instance means the host could not be started (see nvim.js).
+            neovimUnavailable(browser.nvimServer && browser.nvimServer.failure);
+        }
+        // Every path answers: without an answer the neovim page waits forever and
+        // stays blank.
+        function neovimUnavailable(failure) {
+            const reason = (failure || "the native messaging host is not installed")
+                .replace(/\.$/, "")
+                .replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+            _response(message, sendResponse, {
+                error: `<p>Neovim is not available: ${reason}.</p>`
+                    + `<p>It needs <code>nvim</code> and Surfingkeys' native messaging host installed for this browser;`
+                    + ` see <a href="https://github.com/brookhong/Surfingkeys/blob/master/src/nvim/server/Readme.md" target="_blank">src/nvim/server/Readme.md</a>.</p>`,
             });
         }
     };
