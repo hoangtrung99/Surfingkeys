@@ -8,6 +8,8 @@ This fork adds a command palette, a visual tab switcher, 10 built-in color theme
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
+**Guide:** [an interactive handbook, in English and Vietnamese](https://claude.ai/artifact/FGCfEYQyHM6m4ywGB8xV2j): a keyboard you can try in the page, the modes, a searchable key list, the fork's pages, install steps and config recipes.
+
 ### Command palette — <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (macOS) / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> (Windows, Linux)
 
 One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, change theme, open a settings section, disable Surfingkeys on this site, show all keys…). Inside web pages <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> opens it on every platform; the browser-level default on Windows and Linux is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> because Chrome keeps <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for itself there.
