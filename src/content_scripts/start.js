@@ -62,7 +62,13 @@ RUNTIME("getTopSites", null, function(response) {
         });
     };
 
-    document.querySelector('#show-full-list-of-surfingkeys>a').onclick = function() {
+    // Found by its text: marked no longer gives headings ids, so the old
+    // '#show-full-list-of-surfingkeys>a' matched nothing and the page threw
+    // on load (the welcome page opened on install included).
+    const fullList = Array.from(document.querySelectorAll('#quickIntro a'))
+        .find((a) => /Show full list/.test(a.textContent));
+    if (fullList) fullList.onclick = function(e) {
+        e.preventDefault();
         var cl = screen1.classList;
         cl.remove("fadeOut");
         cl.remove("fadeIn");
