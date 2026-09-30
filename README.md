@@ -4,7 +4,7 @@
 
 ## About this fork
 
-This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page and a quick-controls popup. Everything else is upstream Surfingkeys.
+This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page and a quick-controls popup. Everything else is upstream Surfingkeys.
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
@@ -28,20 +28,48 @@ Catppuccin Mocha & Latte, Tokyo Night, Rosé Pine & Dawn, Nord, Dracula, Gruvbox
 
 ![Theme menu](docs/images/theme-menu.png)
 
-Both shortcuts can be changed at `chrome://extensions/shortcuts`. If another extension already holds them, the same keys still work inside web pages, and the welcome page (opened on install) and Settings → Keys show which shortcuts are unassigned.
+Both shortcuts can be changed at `chrome://extensions/shortcuts`. If another extension already holds them, the same keys still work inside web pages, and the welcome page and Settings → Keys show which shortcuts are unassigned.
+
+### Welcome page
+
+Opens once, right after install (and any time from the popup's *Getting started* link). It introduces the palette, the tab switcher and the themes, shows the shortcuts the browser actually assigned, and lets you pick a theme there: the page itself changes with it. *Show the quick guide* leads to upstream's guide and the full key list.
+
+![Welcome page](docs/images/welcome.png)
+
+### Toolbar popup
+
+Click the Surfingkeys icon in the toolbar for quick controls:
+
+- **This page:** turn Surfingkeys off or on for the current site (it says why when the site is one Surfingkeys cannot run on, such as the Web Store).
+- **All sites:** the global switch.
+- **Theme:** every built-in theme, one click each.
+- **Shortcuts:** the palette and switcher keys as assigned, with a button to change them.
+- Links to each settings section, the welcome page, help and issues.
+
+<img src="docs/images/popup.png" alt="Toolbar popup" width="340">
 
 ### Settings page
 
-Open it with <kbd>;e</kbd>, from the palette or from the toolbar popup. Sections, each with its own link (`options.html#keys` and so on):
+A new settings page replaces upstream's single long form. Open it with <kbd>;e</kbd>, from the palette or from the toolbar popup. The sidebar lists the sections; each has its own link (`options.html#keys` and so on), and *Find a setting* at the top searches all of them. The chip beside it shows whether your settings script is in use (*Advanced mode · script*) or not (*Basic mode*).
 
-- **Appearance:** theme cards with live previews, Auto light/dark pair.
-- **Keys:** every mapping, searchable, with change / disable / reset per key and conflict hints, plus the browser shortcuts and whether they are assigned.
-- **Search engines**, **Sites** (where Surfingkeys is disabled), **Proxy**.
-- **Advanced:** the settings snippet editor with lint, unsaved-change guard and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd>.
-- **Backup:** export settings to a file and import them with a preview.
-- **Reset & About:** a reset that lists exactly what it clears.
+| Section | What it holds |
+|:--|:--|
+| **Appearance** | Theme cards with live previews of the palette, plus the Auto light/dark pair. |
+| **Keys** | The browser shortcuts and whether they are assigned, then every mapping, searchable, with change / disable / reset per key and conflict hints. |
+| **Search engines** | The search aliases (<kbd>o</kbd>+letter in the omnibar, <kbd>s</kbd>+letter on a selection), each with its own switch. |
+| **Sites** | Where Surfingkeys is turned off, and where selecting text with the mouse searches it. |
+| **Advanced** | The settings script editor, with lint, an unsaved-change guard and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd> to save; the switch that runs it, and *Load settings from*. |
+| **Proxy** | Proxy mode (always, by host, bypass) and servers with their hosts (Chrome only). |
+| **Backup** | Export settings to a `.json` file and import them, with a preview of what changes before anything is stored. |
+| **Reset & About** | A reset that lists exactly what it clears, and version information. |
 
-The page follows the picked theme and works with the keyboard alone. The toolbar popup turns Surfingkeys off or on for the current site and switches themes.
+| Appearance | Keys |
+|:--:|:--:|
+| ![Settings: Appearance](docs/images/settings-appearance.png) | ![Settings: Keys](docs/images/settings-keys.png) |
+
+![Settings: Backup](docs/images/settings-backup.png)
+
+The page follows the picked theme, works with the keyboard alone and fits narrow windows.
 
 ## Surfingkeys
 
