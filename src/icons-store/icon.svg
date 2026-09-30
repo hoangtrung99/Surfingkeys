@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Surfingkeys Palette: a command palette's search row over three theme swatches.
+       Rendered to PNG by tools/store_icons.py; the state variants recolour it there. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#45475a"/>
+      <stop offset="1" stop-color="#1e1e2e"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="18" y="24" width="92" height="34" rx="11" fill="#cdd6f4"/>
+  <path d="M31 33 l10 8 -10 8" fill="none" stroke="#1e1e2e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="48" y="38" width="46" height="6" rx="3" fill="#6c7086"/>
+  <circle cx="34" cy="88" r="14" fill="#f38ba8"/>
+  <circle cx="64" cy="88" r="14" fill="#f9e2af"/>
+  <circle cx="94" cy="88" r="14" fill="#89b4fa"/>
+</svg>

@@ -5,6 +5,9 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 const FileManagerPlugin = require('filemanager-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 
+// `store=1` builds the package uploaded to the Chrome Web Store (dist/store/chrome).
+const STORE = process.env.store === "1";
+
 function modifyManifest(browser, mode, buffer) {
     // copy-webpack-plugin passes a buffer
     var manifest = JSON.parse(buffer.toString());
@@ -74,11 +77,22 @@ function modifyManifest(browser, mode, buffer) {
         delete manifest.browser_action;
         delete manifest.content_security_policy;
 
+        if (STORE) {
+            // The Chrome Web Store build is its own listing: a name of its own, so
+            // it cannot pass for upstream's, and no key, since that key is
+            // upstream's published ID and the store rejects a package carrying it.
+            manifest.name = "Surfingkeys Palette";
+            manifest.short_name = "SK Palette";
+            manifest.action.default_title = "Surfingkeys Palette";
+            manifest.description = "Vim-style keys for the web, plus a command palette, a visual tab switcher and colour themes. Based on Surfingkeys.";
+            manifest.author = "hoangtrung99 (fork of Surfingkeys by brook hong)";
+            manifest.homepage_url = "https://github.com/hoangtrung99/Surfingkeys";
+            return JSON.stringify(manifest, null, 2);
+        }
         // The key pins the extension ID (aajlcoiaogpknhgninhopncaldipjdnp) that
         // chrome.storage, the shortcuts and the Allow User Scripts toggle are kept under.
-        // This fork is only loaded unpacked, never published, so production builds carry
-        // it too: without it the production folder loads as a new extension with none of
-        // the user's settings.
+        // Unpacked builds carry it, production included: without it the production
+        // folder loads as a new extension with none of the user's settings.
         manifest.key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAneIRqYRqG/0RoYzpWoyeeO8KxxvWZvIabABbeQyHQ2PFOf81j/O5J28HGAEQJ56AptKMTcTeG2qZga9B2u9k98OmRcGp8BDco6fh1vD6/x0fWfehPeub5IcEcQmCd1lBuVa8AtUqV3C+He5rS4g8dB8g8GRlSPPSiDSVNMv+iwKAk7TbM3TKz6DyFO8eCtWXr6wJCcYeJA+Mub7o8DKIHKgv8XH8+GbJGjeeIUBU7mlGlyS7ivdsG1V6D2/Ldx0O1e6sRn7f9jiC4Xy1N+zgZ7BshYbnlbwedomg1d5kuo5m4rS+8BgTchPPkhkvEs62MI4e+fmQd0oGgs7PtMSrTwIDAQAb";
     }
 
@@ -90,7 +104,7 @@ function modifyManifest(browser, mode, buffer) {
 module.exports = (env, argv) => {
     const mode = argv.mode;
     const browser = process.env.browser ? process.env.browser : 'chrome';
-    let buildPath = path.resolve(__dirname, `../dist/${mode}/`);
+    let buildPath = path.resolve(__dirname, STORE ? '../dist/store/' : `../dist/${mode}/`);
     buildPath += "/" + browser;
     const entry = {
         background: `./src/background/${browser}.js`,
@@ -116,6 +130,8 @@ module.exports = (env, argv) => {
         { from: 'src/content_scripts/ui/frontend.css', to: 'pages' },
         { from: 'node_modules/ace-builds/src-noconflict/worker-javascript.js', to: 'pages' },
         { from: 'src/icons', to: 'icons' },
+        // Same file names as src/icons, so every page and state icon switches over
+        ...(STORE ? [{ from: 'src/icons-store/*.png', to: 'icons/[name][ext]', force: true }] : []),
         { from: 'src/content_scripts/content.css', to: 'content.css' },
         {
             from: "src/manifest.json",

@@ -62,6 +62,8 @@ export default function createSettingsPage(deps) {
     }
 
     const version = chrome.runtime.getManifest().version;
+    // The store build is named apart from upstream (see webpack.config.js)
+    document.querySelector('.sk-brand h1').textContent = chrome.runtime.getManifest().name;
     document.getElementById('settingsVersion').textContent = version ? `v${version}` : '';
 
     ctx.announce = function(message, timeout) {

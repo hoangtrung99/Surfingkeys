@@ -19,6 +19,8 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const version = chrome.runtime.getManifest().version;
+// The store build is named apart from upstream (see webpack.config.js)
+document.querySelector('header h1').textContent = chrome.runtime.getManifest().name;
 let blocklist = null;
 let site = null;  // the web origin of the active tab, the key the blocklist uses for it
 let localFile = false;
