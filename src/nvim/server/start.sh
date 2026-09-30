@@ -25,4 +25,12 @@ if [ ! -f "$SCRIPT_PATH/server.lua" ]; then
     exit 127
 fi
 
-exec nvim --headless -c "luafile $SCRIPT_PATH/server.lua"
+# stdout is the browser's native messaging pipe, and one stray byte on it before a
+# reply breaks the protocol: the browser drops the host and ;v shows no editor. The
+# user's config loads before server.lua and may print there (AstroNvim and snacks.nvim
+# write lazygit's terminal colours with io.write), so --cmd, which runs before the
+# config, turns Lua's stdout writes into no-ops. server.lua replies through
+# nvim_chan_send, which this leaves alone.
+exec nvim --headless \
+    --cmd "lua local null = {}; function null.write(self) return self end; null.flush = null.write; null.setvbuf = null.write; io.write = function() return null end; io.stdout = null" \
+    -c "luafile $SCRIPT_PATH/server.lua"
