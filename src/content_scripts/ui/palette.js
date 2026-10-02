@@ -1,9 +1,14 @@
-// Command Palette, modelled on Arc's Command Bar: one flat list, no headers.
+// Command Palette, modelled on Arc's Command Bar: one flat list, with one heading
+// per other browser profile.
 //
 // Empty input: recently used tabs, the current one left out, so Enter goes back
 // to the previous tab. Typing: matching tabs, then history and bookmark pages,
 // then "Open URL" when the input looks like one, then a web search, then the
 // search engine's suggestions. Tab on an empty input lists actions instead.
+//
+// On Chromium, the tabs of the browser's other open profiles follow this profile's,
+// under a heading naming each profile. They come from the native host, after this
+// profile's tabs are shown; picking one brings that profile's window forward.
 //
 // Nothing here that acts is reachable over window.postMessage, which the page can
 // post to like any content script: typed-ahead keys come over chrome.runtime, and
@@ -14,6 +19,7 @@ import {
     attachFaviconToImgSrc,
     constructSearchURL,
     createElementWithContent,
+    getBrowserName,
     htmlEncode,
 } from '../common/utils.js';
 import KeyboardUtils from '../common/keyboardUtils';
@@ -138,6 +144,9 @@ export default function createPalette(omnibar, front, searchEngine) {
     let tabs = null, current = null, pages = [], actionsMode = false;
     let seq = 0, lastPointer = null, pendingEnter = null, early = null;
     let suggestions = [], sugFor = '', sugSeq = 0, sugTimer = null;
+    // the other profiles' tabs, [{peer, name, tabs}], and the line above the rows
+    // while switching to one of them, or saying why that failed
+    let peers = [], notice = null, switching = false;
 
     // Each acts on the tab that hosts the palette. RUNTIME copies RUNTIME.repeats
     // into close/reload/zoom requests, and in this frame it is 0 or undefined
@@ -189,11 +198,27 @@ export default function createPalette(omnibar, front, searchEngine) {
     }
 
     function urlOf(item) {
-        if (item.kind === 'tab' || item.kind === 'page' || item.kind === 'url') {
+        if (item.kind === 'tab' || item.kind === 'peer' || item.kind === 'page' || item.kind === 'url') {
             return item.url;
         }
         const engine = (item.kind === 'search' || item.kind === 'suggestion') && searchEngine.aliases[item.alias];
         return engine ? constructSearchURL(engine.url, encodeURIComponent(item.query)) : '';
+    }
+
+    const profileName = (group) => group.name || 'another profile';
+
+    // Each other profile's tabs under a heading naming it: at most `limit`, in the
+    // order `rank` puts them, as this profile's own tabs are.
+    function peerItems(limit, rank) {
+        const items = [];
+        peers.forEach((group) => {
+            const rows = rank(group.tabs).slice(0, limit);
+            if (rows.length) {
+                items.push({kind: 'heading', key: 'heading' + group.peer, group});
+                rows.forEach((tab) => items.push({kind: 'peer', key: `peer${group.peer}:${tab.id}`, group, tab, url: tab.url}));
+            }
+        });
+        return items;
     }
 
     function buildItems(query) {
@@ -203,7 +228,8 @@ export default function createPalette(omnibar, front, searchEngine) {
         }
         const others = tabs.filter((t) => !t.current);
         if (!terms.length) {
-            return others.slice(0, EMPTY_TABS).map((tab) => ({kind: 'tab', key: 'tab' + tab.id, tab, url: tab.url}));
+            return others.slice(0, EMPTY_TABS).map((tab) => ({kind: 'tab', key: 'tab' + tab.id, tab, url: tab.url}))
+                .concat(peerItems(EMPTY_TABS, (list) => list));
         }
         const bang = query.match(/^!(\S+)\s+(.+)$/);
         if (bang && searchEngine.aliases.hasOwnProperty(bang[1])) {
@@ -213,6 +239,7 @@ export default function createPalette(omnibar, front, searchEngine) {
             .sort((a, b) => (b[1] - a[1]) || tie(a[0], b[0])).map((p) => p[0]);
         const items = ranked(others, (a, b) => a.mru - b.mru).slice(0, MAX_TABS)
             .map((tab) => ({kind: 'tab', key: 'tab' + tab.id, tab, url: tab.url}));
+        items.push(...peerItems(MAX_TABS, (list) => ranked(list, (a, b) => a.mru - b.mru)));
         // an open tab is the better answer than its history entry
         const open = new Set(tabs.map((t) => t.pageKey));
         const pageRows = ranked(pages.filter((p) => !open.has(p.pageKey)),
@@ -264,9 +291,14 @@ export default function createPalette(omnibar, front, searchEngine) {
         }, runtime.conf.omnibarSuggestionTimeout);
     }
 
-    const LABELS = {tab: 'Switch to Tab', page: 'Open', url: 'Open URL'};
+    const LABELS = {tab: 'Switch to Tab', peer: 'Switch to Tab', page: 'Open', url: 'Open URL'};
 
     function render(item, rxp) {
+        // Not an <li>: the omnibar moves the selection over the list's <li>s only, so
+        // Tab and the arrows pass over it.
+        if (item.kind === 'heading') {
+            return el('div', 'sk_palette_group', `Tabs in ${profileName(item.group)}`);
+        }
         const li = document.createElement('li');
         li.item = item;
         li.classList.add('sk_palette_kind_' + (item.kind === 'page' ? (item.page.bookmark ? 'bookmark' : 'history') : item.kind));
@@ -275,14 +307,14 @@ export default function createPalette(omnibar, front, searchEngine) {
             li.url = url;  // what <Ctrl-c> copies; never set li.uid: <Ctrl-D> deletes every listed uid
         }
         let icon;
-        if (item.kind === 'tab' || item.kind === 'page') {
+        if (item.kind === 'tab' || item.kind === 'peer' || item.kind === 'page') {
             icon = document.createElement('img');
             icon.className = 'icon';
-            attachFaviconToImgSrc(item.kind === 'tab' ? item.tab : {url: item.url, favIconUrl: ''}, icon);
+            attachFaviconToImgSrc(item.kind === 'page' ? {url: item.url, favIconUrl: ''} : item.tab, icon);
         } else {
             icon = el('div', 'icon');
         }
-        const title = item.kind === 'tab' ? (item.tab.title || item.url)
+        const title = item.kind === 'tab' || item.kind === 'peer' ? (item.tab.title || item.url)
             : item.kind === 'page' ? (item.page.title || shortPath(item.url))
                 : item.kind === 'action' ? item.name
                     : item.kind === 'url' ? item.url : item.query;
@@ -294,7 +326,8 @@ export default function createPalette(omnibar, front, searchEngine) {
         }
         li.append(icon, row);
         const meta = item.kind === 'tab' && item.tab.otherWindow ? 'Other window'
-            : item.kind === 'page' && item.page.bookmark ? 'Bookmark' : '';
+            : item.kind === 'peer' ? (item.group.name || 'Another profile')
+                : item.kind === 'page' && item.page.bookmark ? 'Bookmark' : '';
         meta && li.append(el('span', 'sk_palette_meta', meta));
         if (item.kind === 'action') {
             if (item.keys) {
@@ -310,9 +343,37 @@ export default function createPalette(omnibar, front, searchEngine) {
         return li;
     }
 
+    // The profile holding the tab brings it forward, and the palette closes once that
+    // profile says it has. A failure -- the tab or the profile gone since the list was
+    // read, no host -- stays here, said above the rows. One switch at a time.
+    function switchToPeer(item) {
+        if (switching) {
+            return;
+        }
+        switching = true;
+        const mine = seq;
+        notice = {text: `Switching to ${profileName(item.group)}…`};
+        update(true);
+        RUNTIME('activatePeerTab', {peer: item.group.peer, tabId: item.tab.id, windowId: item.tab.windowId}, (r) => {
+            if (mine !== seq) {
+                return;  // closed or reopened meanwhile
+            }
+            switching = false;
+            if (r && !r.error) {
+                notice = null;
+                front.hidePopup();
+                return;
+            }
+            notice = {text: `Could not switch to that tab: ${(r && r.error) || 'no answer'}.`, error: true};
+            update(true);
+        });
+    }
+
     function activate(item, how) {
         if (item.kind === 'tab') {
             RUNTIME('focusTab', {windowId: item.tab.windowId, tabId: item.tab.id});
+        } else if (item.kind === 'peer') {
+            switchToPeer(item);
         } else if (item.kind === 'action') {
             item.run();
         } else if (urlOf(item)) {
@@ -367,6 +428,24 @@ export default function createPalette(omnibar, front, searchEngine) {
                 bookmarks = flat.map((b) => Object.assign(prep(b, b.title, b.url), {bookmark: true, pageKey: pageKey(b.url)}));
                 merge();
             });
+            if (getBrowserName() !== 'Chrome') {
+                return;
+            }
+            // after this profile's tabs, which never wait for it; a profile whose tabs
+            // could not be read gets no group
+            RUNTIME('getPeerTabs', {}, (r) => {
+                if (mine !== seq) {
+                    return;
+                }
+                peers = ((r && Array.isArray(r.peers)) ? r.peers : [])
+                    .filter((p) => !p.error && Array.isArray(p.tabs) && p.tabs.length)
+                    .map((p) => ({
+                        peer: p.peer,
+                        name: p.profile ? p.profile.name : null,
+                        tabs: p.tabs.map((t, i) => Object.assign(prep(t, t.title, t.url), {mru: i})),
+                    }));
+                update(true);
+            });
         });
     };
 
@@ -379,6 +458,9 @@ export default function createPalette(omnibar, front, searchEngine) {
         hint.textContent = '';
         tabs = current = lastPointer = pendingEnter = null;
         pages = [];
+        peers = [];
+        notice = null;
+        switching = false;
         suggestions = [];
         sugFor = '';
         actionsMode = false;
@@ -397,6 +479,13 @@ export default function createPalette(omnibar, front, searchEngine) {
         const rxp = terms.length ? new RegExp(terms.join('|'), 'gi') : null;
         const items = buildItems(query);
         omnibar.listResults(items, (item) => render(item, rxp));
+        // listResults gives every row it is handed a click that types into the input
+        omnibar.resultsDiv.querySelectorAll('.sk_palette_group').forEach((heading) => {
+            heading.onclick = null;
+        });
+        if (notice) {
+            omnibar.resultsDiv.prepend(el('div', 'sk_palette_notice' + (notice.error ? ' sk_palette_error' : ''), notice.text));
+        }
         const lis = Array.from(omnibar.resultsDiv.querySelectorAll('li'));
         // a late arrival (history, suggestions) re-renders: the focus stays where it was
         const again = keep && lis.find((li) => li.item.key === keep);
@@ -406,6 +495,15 @@ export default function createPalette(omnibar, front, searchEngine) {
         }
         lis.forEach((li) => {
             li.onclick = () => {
+                if (li.item.kind === 'peer') {
+                    // the row clicked is the one a failure is said for, and Enter retries
+                    if (!switching) {
+                        lis.forEach((x) => x.classList.remove('focused'));
+                        li.classList.add('focused');
+                        activate(li.item);
+                    }
+                    return;
+                }
                 activate(li.item);
                 front.hidePopup();
             };
@@ -433,7 +531,10 @@ export default function createPalette(omnibar, front, searchEngine) {
             self.onEnter.call(keys) && front.hidePopup();
         }
     }
-    self.onInput = () => update(false);
+    self.onInput = () => {
+        notice = switching ? notice : null;
+        update(false);
+    };
 
     // Tab on an empty input lists the actions, as in Arc; they need no tab list,
     // so a Tab that beats it switches at once and what is typed next filters them.
@@ -495,6 +596,9 @@ export default function createPalette(omnibar, front, searchEngine) {
             activate(fi.item, how);
             if (fi.item.kind === 'tab' || fi.item.kind === 'action') {
                 return true;
+            }
+            if (fi.item.kind === 'peer') {
+                return false;  // closed by switchToPeer once that profile has switched
             }
         } else if (omnibar.input.value.trim() && !actionsMode) {
             activate({kind: 'search', alias: searchEngine.defaultAlias(), query: omnibar.input.value.trim()}, how);

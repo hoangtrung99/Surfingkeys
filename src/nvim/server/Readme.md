@@ -1,4 +1,4 @@
-This native messaging host serves three features:
+This native messaging host serves four features:
 
 * the neovim editor, which needs it to run `nvim` for you.
 * loading settings from `~/.surfingkeys.js`, by setting **Load settings from** to
@@ -7,6 +7,8 @@ This native messaging host serves three features:
   setup below.
 * [switching browser profiles](#switching-profiles) with `gP` (Chromium-based
   browsers on macOS and Linux) — an extension sees only the profile it runs in.
+* [the tabs of the browser's other profiles](#other-profiles-tabs-in-the-palette) in
+  the command palette (the same browsers and systems), for the same reason.
 
 ## Installation under Windows
 
@@ -54,7 +56,7 @@ This native messaging host serves three features:
 
 1. Download `server.lua` from https://raw.githubusercontent.com/hoangtrung99/Surfingkeys/master/src/nvim/server/server.lua to a folder, such as `$HOME/.Surfingkeys_NativeMessagingHosts/`.
    (Upstream's copy serves the editor and `<native>` settings too, but not profile
-   switching.)
+   switching or the other profiles' tabs.)
 
 1. Create a `start.sh` under the same folder, and `chmod +x` it. Two lines in it are
    easy to leave out, and both fail silently — the host never starts and the browser
@@ -182,15 +184,66 @@ What else to expect:
   tab.
 * A profile created or renamed in the last ten seconds or so may be missing or show
   its old name: the browser writes `Local State` lazily.
-* No profile is marked as the current one: the host is shared by every profile and
-  cannot tell which one asked. Picking the profile you are in just opens the start
-  page in a new tab.
+* No profile is marked as the current one. Picking the profile you are in just opens
+  the start page in a new tab.
 * The menu answers once the browser has taken the request, or after 15 seconds at
   most. A browser too busy to confirm by then is left alone (started from a terminal,
   the launched browser would wait 20 seconds and then end the running one to take its
   place), and the menu says the switch is *not confirmed yet*, not that it failed: the
   request has usually reached the browser all the same, so the profile's window may
   still come forward once the browser catches up.
+
+## Other profiles' tabs in the palette
+
+The command palette (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) lists this profile's
+open tabs first. The tabs open in the browser's other profiles follow, a moment later,
+under *Tabs in* and each profile's name. Picking one brings that profile's window to the
+front with the tab selected. If the tab or the profile has closed since the list was
+read, the palette stays open and says so.
+
+How it works: the browser runs one host per open profile, since Surfingkeys in each
+profile starts its own. Each host listens on a UNIX socket, and the palette's host asks
+the others for their tabs and passes on a switch to the one that holds the tab. Each
+host asks its own Surfingkeys, which lists the tabs or switches to one. The sockets are
+in
+
+    $XDG_RUNTIME_DIR/surfingkeys-<uid>/<hash of the browser's data directory>/<pid>.sock
+
+with `$TMPDIR` in place of `$XDG_RUNTIME_DIR` when that is not set, and `/tmp` when
+neither is (macOS has a private `$TMPDIR` for each user). The host makes both folders
+with mode `0700`. If either one exists and belongs to another user, or other users can
+open it, the host does not use it, and the palette lists only this profile's tabs.
+Removing the folder fixes that. A host removes its socket when it exits. A host
+that was killed leaves its socket behind, and the next host to find it removes it.
+
+What is shared, and with whom:
+
+* the title, address, favicon address and window of each open tab. Tabs in a private
+  window are never listed, and a private window's palette lists no other profile's tabs.
+* only between the profiles of **one** browser, the one whose data directory the host
+  found (see [Switching profiles](#switching-profiles)). Another browser running
+  Surfingkeys has its own folder and is never asked.
+* only through those sockets and the hosts' memory. Nothing of the tabs is written to
+  disk: the log described below records only how big those messages were.
+
+Which profile a host serves is not something a host or an extension can know on its own.
+So when Surfingkeys connects to its host, it writes a random token to its own
+`chrome.storage.local`. The host looks for that token in each profile's
+`Local Extension Settings/<extension id>/` folder, the files where the browser keeps that
+storage. The profile whose folder holds it is the one the host serves, and its name comes
+from `Local State`, as in the profile list. Surfingkeys then deletes the token. When it is
+not found, the tabs are listed under *another profile*.
+
+It needs everything [switching profiles](#switching-profiles) needs, and also:
+
+* Surfingkeys running in the other profile, connected to the host. A profile with no
+  window open is usually not loaded, so it has no tabs to list.
+* the same `server.lua` in every profile's host. They all run the one file you installed,
+  so this holds unless you replaced it while the browser was running.
+
+Each other profile has 1.5 seconds to answer. One that does not is left out of that
+palette, and the palette is never held up waiting for it: this profile's tabs are shown
+at once.
 
 ## Note on `<native>` settings
 
@@ -201,4 +254,5 @@ wrong.
 To see why, `touch ~/.surfingkeys.log.on` and reload the extension: each host process
 then writes `~/.surfingkeys.<pid>.log`, holding every message in both directions —
 the names and email addresses of your browser profiles included, once the profile list
-has been opened. Delete the marker to stop it.
+has been opened. Messages that carry tab titles and addresses are logged by their size
+only. Delete the marker to stop it.

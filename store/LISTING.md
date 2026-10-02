@@ -16,7 +16,7 @@ Vim-style keys for the web, plus a command palette, a visual tab switcher and 10
 Surfingkeys Palette is a fork of Surfingkeys, the keyboard-driven browser extension by brook hong, with a command palette, a visual tab switcher, built-in themes and a redesigned settings page. Everything Surfingkeys does is still here.
 
 COMMAND PALETTE (Cmd+Shift+P on macOS, Ctrl+Shift+K on Windows and Linux)
-One box for open tabs, history, bookmarks, URLs and web search. Press Tab for actions on the current tab: copy the URL, pin, mute, move to another window, change the theme, open a settings section, turn the extension off for a site, show every key.
+One box for open tabs, history, bookmarks, URLs and web search. Press Tab for actions on the current tab: copy the URL, pin, mute, move to another window, change the theme, open a settings section, turn the extension off for a site, show every key. With the optional native helper (macOS, Linux), the tabs open in your browser's other profiles are listed too, under each profile's name.
 
 VISUAL TAB SWITCHER (Alt+Q)
 Hold Alt and press Q to step through your tabs in most-recently-used order, release Alt to switch. A quick tap keeps it open so you can pick with the arrow keys or the mouse.
@@ -61,7 +61,7 @@ Control the browser from the keyboard: navigate pages, links and tabs with Vim-s
 | `downloads`, `downloads.shelf` | Download a link or image on the user's key press, and show or hide the downloads bar. |
 | `tts` | Read the selected text aloud when the user asks. |
 | `proxy` | Optional proxy settings the user configures on the settings page. |
-| `nativeMessaging` | Talk to an optional helper the user installs on their own computer, which runs Neovim as the text editor, reads `~/.surfingkeys.js`, and switches browser profiles: when the user presses gP it lists the browser's profiles (their names and the email addresses of signed-in accounts, read from the browser's own Local State file) and opens the one picked by starting the browser. Nothing of it leaves the computer. |
+| `nativeMessaging` | Talk to an optional helper the user installs on their own computer, which runs Neovim as the text editor, reads `~/.surfingkeys.js`, and switches browser profiles: when the user presses gP it lists the browser's profiles (their names and the email addresses of signed-in accounts, read from the browser's own Local State file) and opens the one picked by starting the browser. It also shows the tabs open in the browser's other profiles in the command palette: the helpers of the same browser's profiles pass the titles and addresses of those tabs (never a private window's) to each other over a local socket that only the user's own account can open, and keep nothing on disk. Nothing of it leaves the computer. |
 
 **Remote code**: No. All code is in the package; the user's own settings script runs through the `chrome.userScripts` API only after the user allows it.
 

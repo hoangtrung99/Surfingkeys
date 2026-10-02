@@ -69,13 +69,17 @@ function listenOn(file) {
     });
 }
 
+// XDG_RUNTIME_DIR is where the hosts of one browser meet (server.lua's peer_dir_for):
+// each test's own, so no host of a test makes anything in the real one or in /tmp.
 function envFor(root, home, extra) {
+    fs.mkdirSync(path.join(root, 'run'), { recursive: true });
     const env = Object.assign({}, process.env, {
         HOME: home,
         XDG_CONFIG_HOME: path.join(home, '.config'),
         XDG_STATE_HOME: path.join(root, 'state'),
         XDG_DATA_HOME: path.join(root, 'data'),
         XDG_CACHE_HOME: path.join(root, 'cache'),
+        XDG_RUNTIME_DIR: path.join(root, 'run'),
     }, extra);
     delete env.CHROME_USER_DATA_DIR;
     if (!(extra && extra.CHROME_CONFIG_HOME)) {
@@ -85,11 +89,14 @@ function envFor(root, home, extra) {
 }
 
 // nvim running server.lua, as the child of `cmd` (this process when empty), and the
-// replies it writes, frame by frame.
+// replies it writes, frame by frame. A frame with `peer` set is the host's own request
+// to its extension, handed to `host.onRequest` (once each) -- this process plays that
+// extension too, answering with `host.answer`.
 function startHost(cmd, env) {
     let raw = Buffer.alloc(0);
     let waiters = [];
     let nextId = 1;
+    let requestsSeen = 0;
     const argv = cmd.concat(NVIM);
     const proc = spawn(argv[0], argv.slice(1), { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -110,6 +117,9 @@ function startHost(cmd, env) {
 
     function settle() {
         const replies = frames().out.map((text) => JSON.parse(text));
+        const requests = replies.filter((r) => r.peer !== undefined);
+        requests.slice(requestsSeen).forEach((r) => host.onRequest(r));
+        requestsSeen = requests.length;
         waiters = waiters.filter(({ id, resolve }) => {
             const reply = replies.find((r) => r.id === id);
             if (reply) {
@@ -119,12 +129,16 @@ function startHost(cmd, env) {
         });
     }
 
-    function send(message) {
-        const id = nextId++;
-        const data = Buffer.from(JSON.stringify(Object.assign({ id }, message)));
+    function write(message) {
+        const data = Buffer.from(JSON.stringify(message));
         const header = Buffer.alloc(4);
         header.writeUInt32LE(data.length);
         proc.stdin.write(Buffer.concat([header, data]));
+    }
+
+    function send(message) {
+        const id = nextId++;
+        write(Object.assign({ id }, message));
         return new Promise((resolve) => {
             waiters.push({ id, resolve });
             settle();
@@ -136,7 +150,15 @@ function startHost(cmd, env) {
         settle();
     });
     const exited = new Promise((resolve) => proc.on('exit', (code) => resolve(code)));
-    return { proc, send, frames, exited };
+    const host = {
+        proc,
+        send,
+        frames,
+        exited,
+        onRequest: () => {},
+        answer: (request, status, res) => write({ peerReply: request.peer, status, res }),
+    };
+    return host;
 }
 
 function stopHost(host) {
@@ -403,5 +425,264 @@ int main(int argc, char **argv) {
         const { out, rest } = host.frames();
         expect(rest.length).toBe(0);
         out.forEach((text) => expect(() => JSON.parse(text)).not.toThrow());
+    });
+});
+
+// Tabs of the browser's other profiles: one host per open profile, all children of the
+// same browser (here this process), meeting through sockets in one private directory.
+// This process plays each host's extension, answering what the host asks it.
+const EXTENSION_ID = 'aajlcoiaogpknhgninhopncaldipjdnp';
+
+// A profile's chrome.storage.local as the browser keeps it: a LevelDB whose .log holds
+// each write as it was made, among other records.
+function storeToken(udd, profile, token, file = '000003.log') {
+    const store = path.join(udd, profile, 'Local Extension Settings', EXTENSION_ID);
+    fs.mkdirSync(store, { recursive: true });
+    fs.appendFileSync(path.join(store, file), Buffer.concat([
+        Buffer.from([0x8a, 0x13, 0x00, 0x01, 0x01]),
+        Buffer.from(`_profileToken"${token}"`),
+        Buffer.from([0x00, 0xff]),
+    ]));
+}
+
+const randomToken = () => require('crypto').randomBytes(16).toString('hex');
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const TABS_B = [
+    { id: 7, windowId: 3, title: 'Quarterly plan', url: 'https://docs.test/plan', favIconUrl: 'https://docs.test/icon.png' },
+    { id: 9, windowId: 3, title: 'Inbox', url: 'https://mail.test/' },
+];
+
+// A host that died without removing its socket: the file is there, nothing listens.
+function deadSocket(file) {
+    const killed = spawnSync(process.execPath, ['-e',
+        `require('net').createServer().listen(${JSON.stringify(file)}, () => process.kill(process.pid, 'SIGKILL'))`]);
+    expect(killed.signal).toBe('SIGKILL');
+    expect(fs.existsSync(file)).toBe(true);
+}
+
+(hasNvim ? describe : describe.skip)('server.lua: the tabs of the browser\'s other profiles', () => {
+    let root, home, udd, server, env, meet, a, b, c, silent, many;
+
+    beforeAll(async () => {
+        // short: a socket's path must fit in 104 bytes
+        root = fs.mkdtempSync('/tmp/skp-');
+        home = path.join(root, 'home');
+        udd = path.join(home, '.config', 'TestBrowser');
+        server = await listenOn(path.join(root, 'sock'));
+        makeUdd(udd, process.pid, path.join(root, 'sock'));
+        env = envFor(root, home);
+        const hash = require('crypto').createHash('sha256').update(fs.realpathSync(udd)).digest('hex').slice(0, 16);
+        meet = path.join(fs.realpathSync(root), 'run', `surfingkeys-${process.getuid()}`, hash);
+        a = startHost([], env);
+        b = startHost([], env);
+        // a host whose extension never identifies itself, as an older one would
+        c = startHost([], env);
+        b.onRequest = (request) => {
+            if (request.command === 'Tabs.list' && !silent) {
+                b.answer(request, true, { data: { tabs: many || TABS_B } });
+            } else if (request.command === 'Tabs.activate') {
+                b.answer(request, true, { data: { tabId: request.tabId, windowId: request.windowId, active: true, focused: true } });
+            }
+        };
+        const tokenA = randomToken();
+        storeToken(udd, 'Default', tokenA);
+        const identifiedA = await a.send({ command: 'Profile.identify', token: tokenA, extensionId: EXTENSION_ID });
+        expect(identifiedA.res).toEqual({ data: { dir: 'Default', name: 'Person 1' } });
+        // the write lands after the request: the host looks again
+        const tokenB = randomToken();
+        const identifiedB = b.send({ command: 'Profile.identify', token: tokenB, extensionId: EXTENSION_ID });
+        await sleep(400);
+        storeToken(udd, 'Profile 1', tokenB, '000005.ldb');
+        expect((await identifiedB).res).toEqual({ data: { dir: 'Profile 1', name: 'Ann Example (Work)' } });
+        // c listens from the start, unasked
+        for (let i = 0; i < 50 && !fs.existsSync(path.join(meet, `${c.proc.pid}.sock`)); i++) {
+            await sleep(100);
+        }
+    }, 20000);
+
+    afterAll(async () => {
+        [a, b, c].forEach(stopHost);
+        server && server.close();
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('each host listens in a directory only this user can enter, named after the browser\'s data directory', () => {
+        expect(fs.readdirSync(meet).sort()).toEqual([a, b, c].map((h) => `${h.proc.pid}.sock`).sort());
+        [meet, path.dirname(meet)].forEach((dir) => {
+            const st = fs.lstatSync(dir);
+            expect(st.isDirectory()).toBe(true);
+            expect(st.mode & 0o777).toBe(0o700);
+        });
+    });
+
+    test('Peers.tabs: the other profiles\' tabs, each named, in the order of the profile menu', async () => {
+        silent = false;
+        const reply = await a.send({ command: 'Peers.tabs' });
+        expect(reply.status).toBe(true);
+        expect(reply.res.data.peers).toEqual([
+            { peer: b.proc.pid, profile: { dir: 'Profile 1', name: 'Ann Example (Work)' }, tabs: TABS_B },
+            { peer: c.proc.pid, profile: null, tabs: [], error: expect.stringContaining('not connected to its host yet') },
+        ]);
+    });
+
+    test('a host asked by another asks its extension, and answers it alone: its stdout gets no reply to the peerReply', async () => {
+        const before = b.frames().out.map((text) => JSON.parse(text));
+        await a.send({ command: 'Peers.tabs' });
+        const after = b.frames().out.map((text) => JSON.parse(text)).slice(before.length);
+        expect(after).toEqual([{ peer: expect.any(Number), command: 'Tabs.list' }]);
+        // c's extension never said it answers: it is asked nothing
+        expect(c.frames().out.map((text) => JSON.parse(text)).filter((r) => r.peer !== undefined)).toEqual([]);
+    });
+
+    test('a socket nothing listens on is left out, and removed', async () => {
+        const dead = path.join(meet, '99999999.sock');
+        deadSocket(dead);
+        const reply = await a.send({ command: 'Peers.tabs' });
+        expect(reply.res.data.peers.map((p) => p.peer)).toEqual([b.proc.pid, c.proc.pid]);
+        expect(fs.existsSync(dead)).toBe(false);
+    });
+
+    // macOS refuses a connection to a live host whose queue of them is full, too
+    test('a refused socket named after a process still running is left out, but kept', async () => {
+        const refused = path.join(meet, `${process.pid}.sock`);
+        deadSocket(refused);
+        try {
+            const reply = await a.send({ command: 'Peers.tabs' });
+            expect(reply.res.data.peers.map((p) => p.peer)).toEqual([b.proc.pid, c.proc.pid]);
+            expect(fs.existsSync(refused)).toBe(true);
+        } finally {
+            fs.rmSync(refused, { force: true });
+        }
+    });
+
+    test('a host that does not answer costs 1.5 seconds and its own entry, not the others\'', async () => {
+        const mute = path.join(meet, '88888888.sock');
+        const held = [];
+        const hung = await listenOn(mute);
+        hung.on('connection', (sock) => held.push(sock));
+        try {
+            const sent = Date.now();
+            const reply = await a.send({ command: 'Peers.tabs' });
+            const took = Date.now() - sent;
+            expect(took).toBeGreaterThanOrEqual(1400);
+            expect(took).toBeLessThan(3000);
+            const peers = reply.res.data.peers;
+            expect(peers.find((p) => p.peer === b.proc.pid).tabs).toEqual(TABS_B);
+            expect(peers.find((p) => p.peer === 88888888)).toEqual({
+                peer: 88888888, profile: null, tabs: [], error: 'that profile did not answer within 1.5 seconds',
+            });
+        } finally {
+            held.forEach((sock) => sock.destroy());
+            hung.close();
+            fs.rmSync(mute, { force: true });
+        }
+    });
+
+    test('so does a host whose extension does not answer', async () => {
+        silent = true;
+        try {
+            const reply = await a.send({ command: 'Peers.tabs' });
+            expect(reply.res.data.peers.find((p) => p.peer === b.proc.pid)).toEqual({
+                peer: b.proc.pid, profile: null, tabs: [], error: 'that profile did not answer within 1.5 seconds',
+            });
+        } finally {
+            silent = false;
+        }
+        // its late answer, when it comes, is dropped and the next list is whole again
+        await sleep(1200);
+        const again = await a.send({ command: 'Peers.tabs' });
+        expect(again.res.data.peers[0].tabs).toEqual(TABS_B);
+    });
+
+    // Chrome drops a host that writes it a message over 1 MB, the editor's and every
+    // settings read's connection with it
+    test('a list too long for one native message loses its least recently used tabs, not the connection', async () => {
+        many = Array.from({ length: 4000 }, (x, i) => ({
+            id: i, windowId: 1, title: `Tab ${i}`, url: `https://many.test/${i}/${'p'.repeat(300)}`, favIconUrl: `https://many.test/${i}.ico`,
+        }));
+        try {
+            const reply = await a.send({ command: 'Peers.tabs' });
+            const { out } = a.frames();
+            expect(Buffer.byteLength(out[out.length - 1])).toBeLessThanOrEqual(1024 * 1024);
+            const tabs = reply.res.data.peers.find((p) => p.peer === b.proc.pid).tabs;
+            expect(tabs.length).toBeGreaterThan(1000);
+            expect(tabs.length).toBeLessThan(4000);
+            expect(tabs[0]).toEqual({ id: 0, windowId: 1, title: 'Tab 0', url: many[0].url });
+            expect(tabs.map((t) => t.id)).toEqual(many.slice(0, tabs.length).map((t) => t.id));
+            // and the connection is in step after it
+            expect((await a.send({ command: 'Settings.read' })).status).toBe(true);
+        } finally {
+            many = null;
+        }
+    });
+
+    test('Peers.activate goes to that profile\'s extension and answers with what it observed', async () => {
+        const reply = await a.send({ command: 'Peers.activate', peer: b.proc.pid, tabId: 7, windowId: 3 });
+        expect(reply.res).toEqual({ data: { tabId: 7, windowId: 3, active: true, focused: true } });
+        const asked = b.frames().out.map((text) => JSON.parse(text)).filter((r) => r.command === 'Tabs.activate');
+        expect(asked.pop()).toEqual({ peer: expect.any(Number), command: 'Tabs.activate', tabId: 7, windowId: 3 });
+    });
+
+    test.each([
+        ['a profile that is no longer open', { peer: 77777777, tabId: 7 }, 'that profile is no longer open'],
+        ['a peer that is not a pid', { peer: '../../etc', tabId: 7 }, 'no profile was named'],
+        ['no tab', { peer: 1234 }, 'no tab was named'],
+    ])('Peers.activate refuses %s', async (name, args, said) => {
+        const reply = await a.send(Object.assign({ command: 'Peers.activate' }, args));
+        expect(reply.res).toEqual({ error: said });
+    });
+
+    test.each([
+        ['a token no profile holds', () => ({ token: randomToken(), extensionId: EXTENSION_ID }), 'holds the token'],
+        ['a token two profiles hold', () => {
+            const token = randomToken();
+            storeToken(udd, 'Profile 3', token);
+            storeToken(udd, 'Profile 4', token);
+            return { token, extensionId: EXTENSION_ID };
+        }, 'more than one profile holds the token: '],
+        ['an extension id that is a path', () => ({ token: randomToken(), extensionId: '../../../../../../etc/passwd' }), 'extension id'],
+    ])('Profile.identify refuses %s', async (name, args, said) => {
+        const reply = await c.send(Object.assign({ command: 'Profile.identify' }, args()));
+        expect(reply.res.error).toContain(said);
+    }, 10000);
+
+    test('stdout holds nothing but frames, and a host that exits removes its socket', async () => {
+        [a, b, c].forEach((host) => {
+            const { out, rest } = host.frames();
+            expect(rest.length).toBe(0);
+            out.forEach((text) => expect(() => JSON.parse(text)).not.toThrow());
+        });
+        b.proc.stdin.end();
+        expect(await b.exited).toBe(0);
+        expect(fs.existsSync(path.join(meet, `${b.proc.pid}.sock`))).toBe(false);
+        const reply = await a.send({ command: 'Peers.tabs' });
+        expect(reply.res.data.peers.map((p) => p.peer)).toEqual([c.proc.pid]);
+    });
+});
+
+(hasNvim ? describe : describe.skip)('server.lua: a meeting directory other users can enter', () => {
+    let root, host, server;
+
+    beforeAll(async () => {
+        root = fs.mkdtempSync('/tmp/skp-');
+        const home = path.join(root, 'home');
+        server = await listenOn(path.join(root, 'sock'));
+        makeUdd(path.join(home, '.config', 'TestBrowser'), process.pid, path.join(root, 'sock'));
+        const env = envFor(root, home);
+        fs.mkdirSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`), { mode: 0o755 });
+        fs.chmodSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`), 0o755);
+        host = startHost([], env);
+    });
+
+    afterAll(() => {
+        stopHost(host);
+        server && server.close();
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('is not used: Peers.tabs says why, and the directory is left as it was', async () => {
+        const reply = await host.send({ command: 'Peers.tabs' });
+        expect(reply.res.error).toContain('must have mode 0700');
+        expect(fs.readdirSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`))).toEqual([]);
     });
 });

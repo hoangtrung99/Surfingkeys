@@ -136,7 +136,22 @@ function createChromeMock(opts = {}) {
                 Object.keys(data).forEach((k) => delete data[k]);
                 cb && cb();
             }),
+            remove: jest.fn((keys, cb) => {
+                (typeof keys === 'string' ? [keys] : keys).forEach((k) => delete data[k]);
+                cb && cb();
+            }),
         };
+    };
+
+    // An API's answer that it failed: lastError set for the duration of the callback
+    // only, as chrome sets it.
+    const failWith = (cb, message) => {
+        chrome.runtime.lastError = { message };
+        try {
+            cb(undefined);
+        } finally {
+            chrome.runtime.lastError = undefined;
+        }
     };
 
     // Several call sites use chrome.tabs.update(props, cb) without a tabId, so
@@ -167,6 +182,10 @@ function createChromeMock(opts = {}) {
                 cb(state.tabs.filter((t) => tabMatches(t, queryInfo, state.currentWindowId)))),
             update: jest.fn((...args) =>
                 callBack(args, { id: typeof args[0] === 'number' ? args[0] : 999 })),
+            get: jest.fn((id, cb) => {
+                const tab = state.tabs.find((t) => t.id === id);
+                tab ? cb({ ...tab }) : failWith(cb, `No tab with id: ${id}.`);
+            }),
             remove: jest.fn((ids, cb) => cb && cb()),
             create: jest.fn((props, cb) => cb && cb({ id: 999, ...props })),
             move: jest.fn((ids, props, cb) => cb && cb()),
@@ -197,6 +216,7 @@ function createChromeMock(opts = {}) {
             update: jest.fn((id, props, cb) => cb && cb()),
             remove: jest.fn((id, cb) => cb && cb()),
             getAll: jest.fn((info, cb) => cb && cb([{ id: 1 }, { id: 2 }])),
+            get: jest.fn((id, cb) => cb({ id, focused: id === state.currentWindowId })),
             onFocusChanged: makeEvent(),
         },
         storage: {

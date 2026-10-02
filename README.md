@@ -4,7 +4,7 @@
 
 ## About this fork
 
-This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, and switching browser profiles with <kbd>gP</kbd>. Everything else is upstream Surfingkeys.
+This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, switching browser profiles with <kbd>gP</kbd>, and your other profiles' tabs in the palette. Everything else is upstream Surfingkeys.
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
@@ -13,6 +13,8 @@ This fork adds a command palette, a visual tab switcher, 10 built-in color theme
 ### Command palette — <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (macOS) / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> (Windows, Linux)
 
 One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, switch browser profile, change theme, open a settings section, disable Surfingkeys on this site, show all keys…). Inside web pages <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> opens it on every platform; the browser-level default on Windows and Linux is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> because Chrome keeps <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for itself there.
+
+The tabs open in the browser's other profiles come after this profile's, under *Tabs in* and the profile's name. Picking one brings that profile's window forward with the tab selected. They need the [native messaging host](src/nvim/server/Readme.md#other-profiles-tabs-in-the-palette) (macOS and Linux, Chromium-based browsers) and appear a moment after the palette opens; a private window's palette does not list them.
 
 | Search | Actions (<kbd>Tab</kbd>) |
 |:--:|:--:|
@@ -123,6 +125,7 @@ Surfingkeys does its best to make full use of the keyboard for web browsing, but
 | Switch tabs | Y | Y | Y |
 | Windows management | Y | Y | N |
 | Switch browser profile | needs native host (macOS, Linux) | N | N |
+| Other profiles' tabs in the palette | needs native host (macOS, Linux) | N | N |
 | Commands | Y | Y | Y |
 | Smooth scroll | Y | Y | Y |
 | Session management | Y | Y | Y |
@@ -437,6 +440,9 @@ front with Surfingkeys' start page in a new tab, or a new window opens when it h
 An extension cannot see the browser's other profiles, so this needs the
 [native messaging host](src/nvim/server/Readme.md#switching-profiles), on macOS or Linux,
 in a Chromium-based browser. Without it, the list says what is missing.
+
+With the same host, the command palette also lists the tabs open in the other profiles,
+and picking one switches straight to it.
 
 ## Commands
 

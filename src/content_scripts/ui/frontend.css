@@ -681,6 +681,22 @@ div.sk_arrow[dir=up]>div:nth-of-type(2) {
 #sk_omnibar.sk_palette .sk_palette_meta + .sk_palette_label {
     margin-left: 8px;
 }
+/* The heading over another profile's tabs: no row, so the selection passes over it.
+   In the colours of the built-in theme when one is on (its tokens are on :root). */
+#sk_omnibar.sk_palette .sk_palette_group {
+    padding: 12px 10px 4px;
+    font: 600 11px/16px var(--font, inherit);
+    color: var(--faint, #555);
+}
+/* above the rows: a switch to another profile's tab under way, or why it failed */
+#sk_omnibar.sk_palette .sk_palette_notice {
+    padding: 10px 10px 6px;
+    font: 400 13px/18px var(--font, inherit);
+    color: var(--muted, #555);
+}
+#sk_omnibar.sk_palette .sk_palette_notice.sk_palette_error {
+    color: var(--red, #c62828);
+}
 #sk_omnibarSearchArea .prompt.sk_palette_chip {
     padding: 2px 8px;
     border-radius: 4px;

@@ -182,6 +182,117 @@ describe('createNvimServer', () => {
         });
     });
 
+    // The host asks things of the extension too (another profile's palette wants this
+    // profile's tabs): {peer, command}, answered with {peerReply: peer, status, res}.
+    describe('requests from the host', () => {
+        const answers = () => port.sent.filter((m) => m.peerReply !== undefined);
+
+        it('are answered by the handler for their command, on the same connection', async () => {
+            const nvimServer = createNvimServer();
+            const list = jest.fn(() => Promise.resolve({data: {tabs: [{id: 1}]}}));
+            nvimServer.answer({'Tabs.list': list});
+            port.start();
+            port.reply({peer: 4, command: 'Tabs.list'});
+            await flush();
+            expect(list).toHaveBeenCalledWith({peer: 4, command: 'Tabs.list'});
+            expect(answers()).toEqual([{peerReply: 4, status: true, res: {data: {tabs: [{id: 1}]}}}]);
+        });
+
+        // deliver() hands a message with no id to the one request outstanding, which
+        // would take the host's question for its answer
+        it('never reach a request waiting for a reply with no id', async () => {
+            const nvimServer = createNvimServer();
+            nvimServer.answer({'Tabs.list': () => ({data: {tabs: []}})});
+            port.start();
+            const reply = nvimServer.request({command: 'Settings.read'});
+            await flush();
+            let settled = false;
+            reply.then(() => { settled = true; }, () => { settled = true; });
+            port.reply({peer: 1, command: 'Tabs.list'});
+            await flush();
+            expect(settled).toBe(false);
+            expect(answers()).toEqual([{peerReply: 1, status: true, res: {data: {tabs: []}}}]);
+            port.reply({status: true, res: {data: 'the settings'}});
+            await expect(reply).resolves.toMatchObject({res: {data: 'the settings'}});
+        });
+
+        it('a command nothing answers is refused, as is one named like an Object method', async () => {
+            const nvimServer = createNvimServer();
+            nvimServer.answer({});
+            port.start();
+            port.reply({peer: 2, command: 'Tabs.list'});
+            port.reply({peer: 3, command: 'constructor'});
+            await flush();
+            expect(answers()).toEqual([
+                {peerReply: 2, status: true, res: {error: 'this Surfingkeys does not answer Tabs.list'}},
+                {peerReply: 3, status: true, res: {error: 'this Surfingkeys does not answer constructor'}},
+            ]);
+        });
+
+        it('a handler that throws is answered with status false and its message', async () => {
+            const nvimServer = createNvimServer();
+            nvimServer.answer({'Tabs.activate': () => { throw new Error('no tabs API'); }});
+            port.start();
+            port.reply({peer: 5, command: 'Tabs.activate', tabId: 1});
+            await flush();
+            expect(answers()).toEqual([{peerReply: 5, status: false, res: 'no tabs API'}]);
+        });
+
+        it('a reply carrying an id is still a reply, whatever else it holds', async () => {
+            const nvimServer = createNvimServer();
+            const list = jest.fn();
+            nvimServer.answer({'Tabs.list': list});
+            port.start();
+            const reply = nvimServer.request({command: 'Peers.tabs'});
+            await flush();
+            const sent = port.sent[port.sent.length - 1];
+            port.reply({status: true, id: sent.id, peer: 9, command: 'Tabs.list', res: {data: {peers: []}}});
+            await expect(reply).resolves.toMatchObject({res: {data: {peers: []}}});
+            expect(list).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('onConnect', () => {
+        it('runs once the host has spoken, after its first message is handled, and again on each new host', async () => {
+            jest.useFakeTimers();
+            try {
+                const nvimServer = createNvimServer();
+                const connected = jest.fn(() => {
+                    // the editor's reply has been handled by then
+                    expect(nvimServer.ready).toBe(true);
+                });
+                nvimServer.onConnect(connected);
+                jest.advanceTimersByTime(10);
+                expect(connected).not.toHaveBeenCalled();
+                port.start();
+                port.reply({status: true, res: {data: 'more'}});
+                jest.advanceTimersByTime(0);
+                expect(connected).toHaveBeenCalledTimes(1);
+
+                const replacement = createPortStub();
+                chrome.runtime.connectNative.mockImplementation(() => replacement);
+                port.drop({message: 'Native host has exited.'});
+                jest.advanceTimersByTime(1000);
+                expect(connected).toHaveBeenCalledTimes(1);
+                replacement.start();
+                jest.advanceTimersByTime(0);
+                expect(connected).toHaveBeenCalledTimes(2);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('runs at once for a listener added after the host spoke', async () => {
+            const nvimServer = createNvimServer();
+            port.start();
+            await flush();
+            const connected = jest.fn();
+            nvimServer.onConnect(connected);
+            await flush();
+            expect(connected).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('reconnecting', () => {
         beforeEach(() => {
             jest.useFakeTimers();

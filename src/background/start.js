@@ -144,12 +144,24 @@ const NATIVE_PROFILES_TIMEOUT = 5000;
 // while the switch is still being decided, and may then happen anyway.
 const NATIVE_OPEN_PROFILE_TIMEOUT = 20000;
 
-// Asks the native host one Profile.* command and calls `done` exactly once, with
-// {data} or {error, kind}. `kind` names the fix the menu points at: "host" when no host
-// can be reached, "update" for a server.lua from before the command existed -- which
-// answers it with no `res` at all -- and "pending" when the host could not tell whether
-// it worked: an outcome the menu must not call a failure.
-function askProfileHost(message, timeout, done) {
+// Tabs of the browser's other profiles, for the palette, through the same host: the
+// hosts of one browser's profiles reach each other (server.lua's Peers.*). Each
+// deadline must outlast the host's own -- 1.5 seconds for every other profile's tab
+// list, 3 for a switch -- or the reason the host gives is lost to "no answer".
+const NATIVE_PEER_TABS_TIMEOUT = 3000;
+const NATIVE_PEER_ACTIVATE_TIMEOUT = 5000;
+// The host looks for the identifying token for up to 2 seconds.
+const NATIVE_IDENTIFY_TIMEOUT = 5000;
+// Where the token is written: a key in chrome.storage.local, removed once the host has
+// looked for it.
+const PROFILE_TOKEN_KEY = "_profileToken";
+
+// Asks the native host one Profile.* or Peers.* command and calls `done` exactly once,
+// with {data} or {error, kind}. `kind` names the fix the menu points at: "host" when no
+// host can be reached, "update" for a server.lua from before the command existed --
+// which answers it with no `res` at all -- and "pending" when the host could not tell
+// whether it worked: an outcome the menu must not call a failure.
+function askProfileHost(message, timeout, done, outdated = "this server.lua cannot switch profiles yet, update it") {
     let settled = false;
     const abandon = new AbortController();
     const finish = function(result) {
@@ -180,7 +192,7 @@ function askProfileHost(message, timeout, done) {
         } else if (res && typeof res === "object" && "data" in res) {
             finish({data: res.data});
         } else {
-            finish({error: "this server.lua cannot switch profiles yet, update it", kind: "update"});
+            finish({error: outdated, kind: "update"});
         }
     }, function(error) {
         const reason = (error && error.message ? error.message : String(error)).replace(/\.$/, "");
@@ -2424,11 +2436,11 @@ function start(browser) {
 
     // The browser's profiles for the Profiles omnibar (ui/profileMenu.js), and the
     // switch to one. Both answer on every path: the menu shows the error it is handed.
-    function chromiumOnly(message, sendResponse) {
+    function chromiumOnly(message, sendResponse, what = "switching profiles") {
         if (browser.name === "Chrome") {
             return false;
         }
-        _response(message, sendResponse, {error: "switching profiles needs a Chromium-based browser", kind: "browser"});
+        _response(message, sendResponse, {error: `${what} needs a Chromium-based browser`, kind: "browser"});
         return true;
     }
     self.getProfiles = function(message, sender, sendResponse) {
@@ -2475,6 +2487,183 @@ function start(browser) {
             _response(message, sendResponse, reply.error ? reply : {profile: message.profile});
         });
     };
+
+    // The open tabs of the browser's other profiles, for the palette (ui/palette.js):
+    // {peers: [{peer, profile: {dir, name} | null, tabs, error?}]}, or {error, kind}.
+    // A private window's palette gets none, as it gets no history or bookmarks either.
+    self.getPeerTabs = function(message, sender, sendResponse) {
+        if (chromiumOnly(message, sendResponse, "listing the other profiles' tabs")) {
+            return;
+        }
+        if (sender.tab && sender.tab.incognito) {
+            _response(message, sendResponse, {peers: []});
+            return;
+        }
+        askProfileHost({command: "Peers.tabs"}, NATIVE_PEER_TABS_TIMEOUT, function(reply) {
+            if (reply.error) {
+                _response(message, sendResponse, reply);
+                return;
+            }
+            const peers = reply.data && Array.isArray(reply.data.peers) ? reply.data.peers : [];
+            _response(message, sendResponse, {peers: peers.filter((p) => p && Number.isInteger(p.peer) && Array.isArray(p.tabs)).map((p) => {
+                const profile = p.profile && typeof p.profile.dir === "string"
+                    ? {dir: p.profile.dir, name: typeof p.profile.name === "string" && p.profile.name ? p.profile.name : p.profile.dir}
+                    : null;
+                const tabs = p.tabs.filter((t) => t && Number.isInteger(t.id) && Number.isInteger(t.windowId) && typeof t.url === "string")
+                    .map((t) => ({
+                        id: t.id,
+                        windowId: t.windowId,
+                        title: typeof t.title === "string" ? t.title : "",
+                        url: t.url,
+                        favIconUrl: typeof t.favIconUrl === "string" ? t.favIconUrl : "",
+                    }));
+                return typeof p.error === "string" ? {peer: p.peer, profile, tabs, error: p.error} : {peer: p.peer, profile, tabs};
+            })});
+        }, "this server.lua cannot list the other profiles' tabs yet, update it");
+    };
+    // Switches to tab `message.tabId` of the profile whose host is `message.peer`:
+    // {tab: what that profile observed}, or {error} saying why not.
+    self.activatePeerTab = function(message, sender, sendResponse) {
+        if (chromiumOnly(message, sendResponse, "switching to another profile's tab")) {
+            return;
+        }
+        if (sender.tab && sender.tab.incognito) {
+            _response(message, sendResponse, {error: "not from a private window"});
+            return;
+        }
+        if (!Number.isInteger(message.peer) || !Number.isInteger(message.tabId)) {
+            _response(message, sendResponse, {error: "no tab was named"});
+            return;
+        }
+        const ask = {command: "Peers.activate", peer: message.peer, tabId: message.tabId};
+        if (Number.isInteger(message.windowId)) {
+            ask.windowId = message.windowId;
+        }
+        askProfileHost(ask, NATIVE_PEER_ACTIVATE_TIMEOUT, function(reply) {
+            _response(message, sendResponse, reply.error ? reply : {tab: reply.data});
+        }, "this server.lua cannot switch to another profile's tab yet, update it");
+    };
+
+    // What the native host asks of THIS profile, for another profile's palette. Never a
+    // private window's tabs: the palette that lists them is not private.
+    //
+    // Titles and URLs are cut to a size, and an address longer than that is left out
+    // rather than cut: the host hands every profile's tabs over in one message of at
+    // most 1 MB, and a cut address would be copied or matched as if it were the real one.
+    const PEER_TITLE_MAX = 300;
+    const PEER_URL_MAX = 8192;
+    const PEER_ICON_MAX = 1024;
+    function wellFormed(text) {
+        // a title cut inside a surrogate pair is no longer valid UTF-16
+        return typeof text.toWellFormed === "function" ? text.toWellFormed() : text;
+    }
+    function shareableTabs(tabs) {
+        return (tabs || []).filter((t) => t && !t.incognito).map((t) => {
+            const tab = {
+                id: t.id,
+                windowId: t.windowId,
+                title: wellFormed(String(t.title || "").slice(0, PEER_TITLE_MAX)),
+                url: String(t.url || t.pendingUrl || ""),
+            };
+            if (typeof t.favIconUrl === "string" && /^https?:/.test(t.favIconUrl) && t.favIconUrl.length <= PEER_ICON_MAX) {
+                tab.favIconUrl = t.favIconUrl;
+            }
+            return tab;
+        }).filter((t) => t.url.length <= PEER_URL_MAX);
+    }
+    // Most recently used first, as this profile's own palette orders them.
+    function tabsForPeer() {
+        return new Promise((resolve) => {
+            if (typeof self.tabSwitcherTabs === "function") {
+                self.tabSwitcherTabs({needResponse: true}, {}, (resp) => {
+                    resolve({data: {tabs: shareableTabs(resp && resp.tabs)}});
+                });
+                return;
+            }
+            chrome.tabs.query({}, (tabs) => {
+                if (chrome.runtime.lastError) {
+                    resolve({error: chrome.runtime.lastError.message});
+                    return;
+                }
+                const recent = (tabs || []).slice().sort((x, y) => (y.lastAccessed || 0) - (x.lastAccessed || 0));
+                resolve({data: {tabs: shareableTabs(recent)}});
+            });
+        });
+    }
+    // Brings tab `request.tabId` forward, and reports what it observes afterwards. The
+    // id comes from another process: one this profile has no tab for is refused, never
+    // passed on. The tab's window is read anew, since it may have moved since it was
+    // listed.
+    function activateForPeer(request) {
+        return new Promise((resolve) => {
+            if (!Number.isInteger(request.tabId)) {
+                resolve({error: "no tab was named"});
+                return;
+            }
+            chrome.tabs.get(request.tabId, (tab) => {
+                if (chrome.runtime.lastError || !tab || tab.incognito) {
+                    resolve({error: "that tab is no longer open"});
+                    return;
+                }
+                chrome.tabs.update(tab.id, {active: true}, () => {
+                    void chrome.runtime.lastError;
+                    chrome.windows.update(tab.windowId, {focused: true}, () => {
+                        void chrome.runtime.lastError;
+                        chrome.tabs.get(tab.id, (after) => {
+                            if (chrome.runtime.lastError || !after) {
+                                resolve({error: "that tab closed as it was being switched to"});
+                                return;
+                            }
+                            chrome.windows.get(after.windowId, (win) => {
+                                const focused = !chrome.runtime.lastError && !!(win && win.focused);
+                                resolve(after.active
+                                    ? {data: {tabId: after.id, windowId: after.windowId, active: true, focused}}
+                                    : {error: "the browser did not switch to that tab"});
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
+    // The host cannot tell which profile it serves, and this extension does not know the
+    // name of its profile's folder either. So it writes a fresh random token to its own
+    // storage, and the host finds the profile folder holding it (server.lua's
+    // Profile.identify): once each time a host connects, and when the host asks.
+    //
+    // The token is removed once the host has looked. It is no setting, and a key left in
+    // local storage is copied into sync storage with the settings.
+    let identifying = false;
+    function identifyToHost() {
+        if (identifying) {
+            return;
+        }
+        identifying = true;
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        chrome.storage.local.set({[PROFILE_TOKEN_KEY]: token}, () => {
+            if (chrome.runtime.lastError) {
+                identifying = false;
+                return;
+            }
+            askProfileHost({command: "Profile.identify", token, extensionId: chrome.runtime.id}, NATIVE_IDENTIFY_TIMEOUT, () => {
+                identifying = false;
+                chrome.storage.local.remove(PROFILE_TOKEN_KEY, () => void chrome.runtime.lastError);
+            });
+        });
+    }
+    if (browser.name === "Chrome" && nativeHost && nativeHost.answer && nativeHost.onConnect) {
+        nativeHost.answer({
+            "Tabs.list": tabsForPeer,
+            "Tabs.activate": activateForPeer,
+            "Profile.identify": function() {
+                identifyToHost();
+                return {data: true};
+            },
+        });
+        nativeHost.onConnect(identifyToHost);
+    }
 
     var userAgent;
     function onBeforeSendHeaders(details) {

@@ -24,6 +24,9 @@ function generatePassword() {
 //
 // `request` shares this connection, so one neovim answers both the editor and every
 // settings read.
+//
+// The host asks things of the extension too (`answer`), and `onConnect` runs each time
+// a host has connected and spoken.
 function createNvimServer() {
     const nvimServer = {ready: false};
     let nativeConnected = false;
@@ -55,6 +58,13 @@ function createNvimServer() {
     // Its rejecter: a caller that asked before the first attempt failed (the neovim
     // page waking the service worker) is told why, instead of waiting forever.
     let failInstance = null;
+
+    // What answers the host's own requests, by command (see answerHost), and what runs
+    // when a host connects.
+    let handlers = {};
+    const connectListeners = [];
+    // Whether the host on `port` has spoken, so a listener added later runs at once.
+    let spoken = false;
 
     // An `instance` left resolved across a retry hands out the port that just died,
     // so a pending one takes its place before each attempt.
@@ -101,6 +111,35 @@ function createNvimServer() {
         return false;
     }
 
+    // A request the HOST makes: {peer, command, ...}, answered on the same connection
+    // with {peerReply: peer, status, res}. The answer goes to the port the request came
+    // on, which a reconnect may have replaced by then: the new host never asked it.
+    function answerHost(nm, request) {
+        const reply = (status, res) => {
+            try {
+                nm.postMessage({peerReply: request.peer, status, res});
+            } catch (e) {
+                // the connection went while the answer was being made
+            }
+        };
+        const command = request.command;
+        if (!Object.prototype.hasOwnProperty.call(handlers, command)) {
+            reply(true, {error: `this Surfingkeys does not answer ${command}`});
+            return;
+        }
+        Promise.resolve().then(() => handlers[command](request)).then((res) => reply(true, res), (error) => {
+            reply(false, error && error.message ? error.message : String(error));
+        });
+    }
+
+    function notify(listener) {
+        try {
+            listener();
+        } catch (e) {
+            LOG("error", e);
+        }
+    }
+
     function startNative() {
         let markReachable;
         let markUnreachable;
@@ -114,6 +153,7 @@ function createNvimServer() {
 
         const nm = chrome.runtime.connectNative(NATIVE_HOST_NAME);
         port = nm;
+        spoken = false;
         const password = generatePassword();
         nm.onDisconnect.addListener((disconnected) => {
             // Firefox reports it on the port, Chrome in runtime.lastError.
@@ -154,6 +194,19 @@ function createNvimServer() {
             markReachable();
             // A host that answered got up, so its next failure starts the delay over.
             reconnectDelay = RECONNECT_DELAY_MS;
+            if (port === nm && !spoken) {
+                spoken = true;
+                // Once this message has been handled, so a listener finds what it sets
+                // (`ready`, from the editor's reply) already set.
+                setTimeout(() => connectListeners.forEach(notify), 0);
+            }
+            // Before deliver(), whose fallback hands a message with no id to the single
+            // request outstanding: the host's question would resolve that request as
+            // its answer.
+            if (resp && resp.peer !== undefined && resp.id === undefined && typeof resp.command === "string") {
+                answerHost(nm, resp);
+                return;
+            }
             if (deliver(resp)) {
                 return;
             }
@@ -208,6 +261,18 @@ function createNvimServer() {
                 port.postMessage(Object.assign({}, message, {id}));
             });
         });
+    };
+
+    // `table` maps a command the host may send to a function of the request, which
+    // returns (or resolves to) the `res` of the answer. Replaces any table before it.
+    nvimServer.answer = function(table) {
+        handlers = Object.assign({}, table);
+    };
+    nvimServer.onConnect = function(listener) {
+        connectListeners.push(listener);
+        if (port && spoken) {
+            setTimeout(() => notify(listener), 0);
+        }
     };
 
     armInstance();

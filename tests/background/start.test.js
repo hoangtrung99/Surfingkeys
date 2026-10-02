@@ -2851,6 +2851,246 @@ describe('start', () => {
         });
     });
 
+    describe("the other profiles' tabs, for the palette", () => {
+        const withHost = (request, extra = {}) => ({
+            browser: {nvimServer: {ready: true, instance: Promise.resolve({}), request}, ...extra},
+        });
+        const ask = async (boot, message, sender = senderFor(12)) => {
+            const {sendResponse} = boot.dispatch(Object.assign({needResponse: true}, message), sender);
+            await flushPromises();
+            return sendResponse;
+        };
+        const incognito = () => ({...senderFor(12), tab: {...senderFor(12).tab, incognito: true}});
+
+        it('lists them from Peers.tabs, keeping only what the palette can use', async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {data: {peers: [
+                {peer: 41, profile: {dir: 'Profile 1', name: 'Work'}, tabs: [
+                    {id: 7, windowId: 3, title: 'Plan', url: 'https://docs.test/plan', favIconUrl: 'https://docs.test/i.png'},
+                    {id: 8, windowId: 3, url: 'https://untitled.test/'},
+                    {id: 'nine', windowId: 3, title: 'not a tab id', url: 'https://x.test/'},
+                    {id: 10, windowId: 3, title: 'no url'},
+                ]},
+                {peer: 42, profile: null, tabs: [], error: 'that profile did not answer within 1.5 seconds'},
+                {peer: 43, profile: {dir: 'Profile 3'}, tabs: []},
+                {peer: 'Profile 9', tabs: []},
+                null,
+            ]}}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'getPeerTabs'});
+            expect(request).toHaveBeenCalledWith({command: 'Peers.tabs'}, {signal: expect.anything()});
+            expect(sendResponse).toHaveBeenCalledWith({peers: [
+                {peer: 41, profile: {dir: 'Profile 1', name: 'Work'}, tabs: [
+                    {id: 7, windowId: 3, title: 'Plan', url: 'https://docs.test/plan', favIconUrl: 'https://docs.test/i.png'},
+                    {id: 8, windowId: 3, title: '', url: 'https://untitled.test/', favIconUrl: ''},
+                ]},
+                {peer: 42, profile: null, tabs: [], error: 'that profile did not answer within 1.5 seconds'},
+                {peer: 43, profile: {dir: 'Profile 3', name: 'Profile 3'}, tabs: []},
+            ]});
+        });
+
+        it('lists nothing to a private window, and does not ask', async () => {
+            const request = jest.fn();
+            const boot = bootstrap(withHost(request));
+            expect(await ask(boot, {action: 'getPeerTabs'}, incognito())).toHaveBeenCalledWith({peers: []});
+            expect(await ask(boot, {action: 'activatePeerTab', peer: 41, tabId: 7}, incognito()))
+                .toHaveBeenCalledWith({error: 'not from a private window'});
+            expect(request).not.toHaveBeenCalled();
+        });
+
+        it('refuses outside Chromium without asking the host', async () => {
+            const request = jest.fn();
+            const boot = bootstrap(withHost(request, {name: 'Firefox'}));
+            for (const action of ['getPeerTabs', 'activatePeerTab']) {
+                const sendResponse = await ask(boot, {action, peer: 41, tabId: 7});
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Chromium'), kind: 'browser'});
+            }
+            expect(request).not.toHaveBeenCalled();
+        });
+
+        it('says a server.lua from before Peers.tabs needs updating', async () => {
+            const boot = bootstrap(withHost(jest.fn(() => Promise.resolve({status: true, id: 1}))));
+            const sendResponse = await ask(boot, {action: 'getPeerTabs'});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('update it'), kind: 'update'});
+        });
+
+        it('gives up on the list after 3 seconds, the host\'s own 1.5 being over by then', async () => {
+            jest.useFakeTimers();
+            try {
+                const request = jest.fn(() => new Promise(() => {}));
+                const {dispatch} = bootstrap(withHost(request));
+                const {sendResponse} = dispatch({action: 'getPeerTabs', needResponse: true}, senderFor(12));
+                jest.advanceTimersByTime(2999);
+                expect(sendResponse).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 3 seconds'});
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('switches to a tab through Peers.activate, and answers with what that profile observed', async () => {
+            const observed = {tabId: 7, windowId: 3, active: true, focused: true};
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {data: observed}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'activatePeerTab', peer: 41, tabId: 7, windowId: 3});
+            expect(request).toHaveBeenCalledWith({command: 'Peers.activate', peer: 41, tabId: 7, windowId: 3},
+                {signal: expect.anything()});
+            expect(sendResponse).toHaveBeenCalledWith({tab: observed});
+        });
+
+        it('passes on why a switch failed', async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {error: 'that profile is no longer open'}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'activatePeerTab', peer: 41, tabId: 7});
+            expect(sendResponse).toHaveBeenCalledWith({error: 'that profile is no longer open'});
+        });
+
+        it('asks nothing for a switch that names no tab', async () => {
+            const request = jest.fn();
+            const boot = bootstrap(withHost(request));
+            for (const args of [{peer: 41}, {tabId: 7}, {peer: '41', tabId: 7}, {peer: 41, tabId: 7.5}]) {
+                const sendResponse = await ask(boot, Object.assign({action: 'activatePeerTab'}, args));
+                expect(sendResponse).toHaveBeenCalledWith({error: 'no tab was named'});
+            }
+            expect(request).not.toHaveBeenCalled();
+        });
+
+        it('gives up on a switch after 5 seconds, the host\'s own 3 being over by then', async () => {
+            jest.useFakeTimers();
+            try {
+                const request = jest.fn(() => new Promise(() => {}));
+                const {dispatch} = bootstrap(withHost(request));
+                const {sendResponse} = dispatch({action: 'activatePeerTab', peer: 41, tabId: 7, needResponse: true}, senderFor(12));
+                jest.advanceTimersByTime(4999);
+                expect(sendResponse).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 5 seconds'});
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+    });
+
+    // Another profile's palette, through the native host: the host asks this profile's
+    // background ({peer, command}), and the background tells the host which profile it is.
+    describe('answering the host for another profile', () => {
+        const PEER_TABS = [
+            {id: 31, windowId: 5, title: 'Older', url: 'https://older.test/', lastAccessed: 100, favIconUrl: 'https://older.test/i.png'},
+            {id: 32, windowId: 5, title: 'Newest', url: 'https://newest.test/', lastAccessed: 300, favIconUrl: 'data:image/png;base64,AAAA'},
+            {id: 33, windowId: 6, title: 'Private', url: 'https://private.test/', lastAccessed: 400, incognito: true},
+            {id: 34, windowId: 5, title: 'x'.repeat(400), url: 'https://long-title.test/', lastAccessed: 200},
+            {id: 35, windowId: 5, title: 'Huge', url: 'data:text/plain,' + 'a'.repeat(9000), lastAccessed: 250},
+        ];
+        const hostStub = (request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {data: {dir: 'Default'}}}))) => ({
+            ready: true,
+            instance: Promise.resolve({}),
+            request,
+            answer: jest.fn(),
+            onConnect: jest.fn(),
+        });
+        const boot = (nvimServer, extra = {}) => bootstrap({
+            chrome: {tabs: PEER_TABS.map((t) => ({...t}))},
+            browser: {nvimServer, ...extra},
+        });
+        const handlers = (nvimServer) => nvimServer.answer.mock.calls[0][0];
+
+        it('answers Tabs.list, Tabs.activate and Profile.identify, in Chromium only', () => {
+            const chromium = hostStub();
+            boot(chromium);
+            expect(Object.keys(handlers(chromium)).sort()).toEqual(['Profile.identify', 'Tabs.activate', 'Tabs.list']);
+            expect(chromium.onConnect).toHaveBeenCalledTimes(1);
+            const firefox = hostStub();
+            boot(firefox, {name: 'Firefox'});
+            expect(firefox.answer).not.toHaveBeenCalled();
+            expect(firefox.onConnect).not.toHaveBeenCalled();
+        });
+
+        it('Tabs.list: most recently used first, no private tab, titles cut, no data: icon, no address too long to carry', async () => {
+            const nvimServer = hostStub();
+            boot(nvimServer);
+            const res = await handlers(nvimServer)['Tabs.list']({peer: 1, command: 'Tabs.list'});
+            expect(res).toEqual({data: {tabs: [
+                {id: 32, windowId: 5, title: 'Newest', url: 'https://newest.test/'},
+                {id: 34, windowId: 5, title: 'x'.repeat(300), url: 'https://long-title.test/'},
+                {id: 31, windowId: 5, title: 'Older', url: 'https://older.test/', favIconUrl: 'https://older.test/i.png'},
+            ]}});
+        });
+
+        it('Tabs.list takes the palette\'s own order when the tab switcher keeps one', async () => {
+            const nvimServer = hostStub();
+            const mru = [PEER_TABS[0], PEER_TABS[2], PEER_TABS[1]];
+            boot(nvimServer, {extendBackground: (self) => {
+                self.tabSwitcherTabs = jest.fn((message, sender, sendResponse) => sendResponse({tabs: mru}));
+            }});
+            const res = await handlers(nvimServer)['Tabs.list']({peer: 1, command: 'Tabs.list'});
+            expect(res.data.tabs.map((t) => t.id)).toEqual([31, 32]);
+        });
+
+        it('Tabs.activate refuses a tab id this profile does not have, and switches nothing', async () => {
+            const nvimServer = hostStub();
+            const {chrome} = boot(nvimServer);
+            const activate = handlers(nvimServer)['Tabs.activate'];
+            expect(await activate({tabId: 999})).toEqual({error: 'that tab is no longer open'});
+            expect(await activate({tabId: 33})).toEqual({error: 'that tab is no longer open'});
+            expect(await activate({tabId: '31'})).toEqual({error: 'no tab was named'});
+            expect(chrome.tabs.update).not.toHaveBeenCalled();
+            expect(chrome.windows.update).not.toHaveBeenCalled();
+        });
+
+        it('Tabs.activate brings the tab and its window forward, and reports what it observes', async () => {
+            const nvimServer = hostStub();
+            const {chrome} = boot(nvimServer);
+            chrome.tabs.update.mockImplementation((id, props, cb) => {
+                chrome.state.tabs.forEach((t) => {
+                    if (t.windowId === 5) {
+                        t.active = t.id === id;
+                    }
+                });
+                cb({id});
+            });
+            chrome.windows.update.mockImplementation((id, props, cb) => {
+                chrome.state.currentWindowId = id;
+                cb({id});
+            });
+            // listed in window 6, moved to 5 since: its window now is the one brought forward
+            const res = await handlers(nvimServer)['Tabs.activate']({tabId: 31, windowId: 6});
+            expect(chrome.tabs.update).toHaveBeenCalledWith(31, {active: true}, expect.any(Function));
+            expect(chrome.windows.update).toHaveBeenCalledWith(5, {focused: true}, expect.any(Function));
+            expect(res).toEqual({data: {tabId: 31, windowId: 5, active: true, focused: true}});
+        });
+
+        it('Tabs.activate says so when the tab did not become the active one', async () => {
+            const nvimServer = hostStub();
+            boot(nvimServer);
+            const res = await handlers(nvimServer)['Tabs.activate']({tabId: 31});
+            expect(res).toEqual({error: 'the browser did not switch to that tab'});
+        });
+
+        it('identifies the profile when a host connects: a fresh token in storage, sent with the extension id, removed once the host has looked', async () => {
+            let answerHost;
+            const request = jest.fn(() => new Promise((resolve) => { answerHost = resolve; }));
+            const nvimServer = hostStub(request);
+            const {chrome} = boot(nvimServer);
+            nvimServer.onConnect.mock.calls[0][0]();
+            await flushPromises();
+            const [message] = request.mock.calls[0];
+            expect(message).toEqual({command: 'Profile.identify', token: expect.stringMatching(/^[0-9a-f]{32}$/), extensionId: 'surfingkeys-test'});
+            expect(chrome.storage.local.data._profileToken).toBe(message.token);
+            // one at a time
+            nvimServer.onConnect.mock.calls[0][0]();
+            await flushPromises();
+            expect(request).toHaveBeenCalledTimes(1);
+            answerHost({status: true, id: 1, res: {data: {dir: 'Default', name: 'Person 1'}}});
+            await flushPromises();
+            expect(chrome.storage.local.data).not.toHaveProperty('_profileToken');
+            // and again when the host asks, with a new token
+            expect(handlers(nvimServer)['Profile.identify']({peer: 3, command: 'Profile.identify'})).toEqual({data: true});
+            await flushPromises();
+            expect(request).toHaveBeenCalledTimes(2);
+            expect(request.mock.calls[1][0].token).not.toBe(message.token);
+        });
+    });
+
     describe('toolbar icon', () => {
         it.each([
             ['disabled', 'icons/48-x.png'],

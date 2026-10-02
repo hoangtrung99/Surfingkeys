@@ -485,7 +485,9 @@ end
 local DEFERRED = {}
 
 -- Writes the reply to request `id`. Every reply goes through here, deferred or not.
-local function send_reply(chan, id, status, res)
+-- `summary`, when given, is logged in place of the reply: one that carries tab titles
+-- and URLs must not land in the log file.
+local function send_reply(chan, id, status, res, summary)
     -- json_encode refuses a string that is not UTF-8 (a path, a program's output), and
     -- a reply that is never written leaves the browser waiting for it.
     local encoded, resp = pcall(vim.fn.json_encode, {
@@ -505,7 +507,9 @@ local function send_reply(chan, id, status, res)
     end
     -- Settings are read on every page load, so logging the reply text would grow this
     -- log by the size of ~/.surfingkeys.js per page.
-    if status and type(res) == "table" and type(res.data) == "string" then
+    if summary ~= nil then
+        logw("stdout: " .. summary .. ", " .. #resp .. " bytes\n")
+    elseif status and type(res) == "table" and type(res.data) == "string" then
         logw("stdout: Settings.read " .. #res.data .. " bytes\n")
     else
         logw("stdout: " .. resp .. "\n")
@@ -1069,6 +1073,606 @@ local function open_profile(chan, req)
     return DEFERRED
 end
 
+-- Tabs of the browser's other profiles (the palette) -----------------------------------
+--
+-- The browser runs one host per open profile: Surfingkeys in each profile connects its
+-- own. The hosts of one browser find each other through UNIX sockets, one per host, in
+-- a directory named after the browser's data directory, so a host never reaches the
+-- hosts of another browser. A host asked for its tabs asks its own extension, over the
+-- native messaging pipe the other way round: a message with `peer` set is a request
+-- FROM this host, and the extension answers it with `peerReply`.
+--
+-- Tabs pass through sockets and memory only. Nothing of them is written to disk, the
+-- log included.
+
+-- How long Peers.tabs waits for each other host, all of them at once. The palette lists
+-- this profile's tabs without waiting for it, so a host that hangs delays the other
+-- profiles' group by this much and nothing else.
+local PEER_LIST_TIMEOUT_MS = 1500
+-- How long Peers.activate waits for the other profile to report what it switched to.
+-- The background's own deadline (start.js) must outlast it.
+local PEER_ACTIVATE_TIMEOUT_MS = 3000
+-- How long a request from another host waits for this host's extension.
+local PEER_SERVE_TIMEOUT_MS = 2500
+-- Profile.identify looks for the token this many times, this far apart: the storage
+-- write is on disk by the time the extension sends it, the retries are for a disk that
+-- is slow to show it.
+local IDENTIFY_ATTEMPTS = 8
+local IDENTIFY_INTERVAL_MS = 250
+-- When a scan found nothing, the extension is asked for a new token at most this often.
+local REIDENTIFY_GAP_MS = 30000
+-- A request from another host is one short line. Past this it is not one.
+local PEER_REQUEST_MAX = 65536
+-- Or a reply of one: a profile with thousands of tabs comes to a few megabytes.
+local PEER_REPLY_MAX = 32 * 1024 * 1024
+-- Chrome ends the connection to a host that writes it a message over 1 MB, and the
+-- editor and every settings read go with it.
+local NATIVE_MESSAGE_MAX = 1024 * 1024
+-- A socket's path must fit in sun_path with its NUL: 104 bytes on macOS, 108 on Linux.
+-- libuv cuts a longer one short, and the socket would be made under another name.
+local SOCKET_PATH_MAX = 103
+
+local peer = {
+    -- where the hosts of this browser meet, and this host's socket there
+    dir = nil,
+    path = nil,
+    server = nil,
+    udd = nil,
+    -- The extension has sent Profile.identify, so it answers requests with `peer` set.
+    -- One that has not is never sent one: an older extension takes a message carrying
+    -- no id for the reply to the request it has outstanding.
+    answering = false,
+    -- the profile this host serves, once its token was found
+    profile_dir = nil,
+    identifying = false,
+    -- uv.now() when the extension was last asked for a token, or nil
+    asked_at = nil,
+}
+
+-- Requests to the extension waiting for their `peerReply`, by number.
+local extension_waiting = {}
+local next_extension_request = 1
+
+-- Sends `message` to the extension and calls `done(res)` once, with what it answered
+-- or {error}. Only for an extension that has identified itself (peer.answering).
+local function ask_extension(message, timeout_ms, done)
+    local n = next_extension_request
+    next_extension_request = n + 1
+    local timer = nil
+    local function finish(res)
+        if extension_waiting[n] == nil then
+            return
+        end
+        extension_waiting[n] = nil
+        if timer ~= nil then
+            pcall(vim.fn.timer_stop, timer)
+        end
+        done(res)
+    end
+    extension_waiting[n] = finish
+    message.peer = n
+    local encoded, text = pcall(vim.fn.json_encode, message)
+    local written = encoded and pcall(write_stdout, surfingkeys_server_id, text)
+    if not written then
+        finish({ error = 'the host could not write to Surfingkeys' })
+        return
+    end
+    logw("stdout: " .. text .. "\n")
+    timer = vim.fn.timer_start(timeout_ms, function()
+        finish({ error = 'Surfingkeys in that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds' })
+    end)
+end
+
+-- `path` as a directory only this user can enter, made if missing; or nil and why.
+-- Anyone else who could add a socket there would be sent this profile's requests, and
+-- could hand the palette tabs of their own making.
+local function private_dir(path)
+    uv.fs_mkdir(path, 448)
+    local st = uv.fs_lstat(path)
+    if type(st) ~= 'table' or st.type ~= 'directory' then
+        return nil, path .. ' is not a directory'
+    end
+    if st.uid ~= uv.getuid() then
+        return nil, path .. ' belongs to another user'
+    end
+    if bit.band(st.mode, 511) ~= 448 then
+        return nil, path .. ' can be entered by other users: it must have mode 0700'
+    end
+    return path
+end
+
+-- The directory the hosts of data directory `udd` meet in. Every host of one browser
+-- inherits the browser's environment, so they all pick the same one.
+local function peer_dir_for(udd)
+    local base = os.getenv('XDG_RUNTIME_DIR')
+    if base == nil or base == '' then
+        base = os.getenv('TMPDIR')
+    end
+    if base == nil or base == '' then
+        base = '/tmp'
+    end
+    base = (string.gsub(base, '/+$', ''))
+    local root, err = private_dir(base .. '/surfingkeys-' .. uv.getuid())
+    if root == nil then
+        return nil, err
+    end
+    return private_dir(root .. '/' .. string.sub(vim.fn.sha256(udd), 1, 16))
+end
+
+local serve_peer
+
+-- Listens for the other hosts of this browser, if not already. Returns true, or nil and
+-- why not.
+local function peer_listen()
+    if peer.server ~= nil then
+        return true
+    end
+    local browser, err = locate_browser(false)
+    if browser == nil then
+        return nil, err
+    end
+    local dir, derr = peer_dir_for(browser.udd)
+    if dir == nil then
+        return nil, derr
+    end
+    local pid = vim.fn.getpid()
+    local path = dir .. '/' .. pid .. '.sock'
+    local temp = dir .. '/' .. pid .. '.new'
+    if #temp > SOCKET_PATH_MAX then
+        return nil, 'the socket path ' .. path .. ' is too long'
+    end
+    -- Bound under another name and renamed once listening: another host that found it
+    -- before it listens would take it for a dead host's socket, and remove it.
+    uv.fs_unlink(temp)
+    -- a dead host's, whose pid this one has now
+    uv.fs_unlink(path)
+    local server = uv.new_pipe(false)
+    local ok, lerr = server:bind(temp)
+    if ok then
+        ok, lerr = server:listen(16, function(cerr)
+            if cerr then
+                return
+            end
+            local client = uv.new_pipe(false)
+            if server:accept(client) then
+                serve_peer(client)
+            else
+                client:close()
+            end
+        end)
+    end
+    if ok then
+        ok, lerr = uv.fs_rename(temp, path)
+    end
+    if not ok then
+        server:close()
+        uv.fs_unlink(temp)
+        return nil, 'could not listen on ' .. path .. ': ' .. tostring(lerr)
+    end
+    peer.server, peer.dir, peer.path, peer.udd = server, dir, path, browser.udd
+    return true
+end
+
+-- Removes this host's socket, so the others do not try it once the host is gone.
+function surfingkeys_peer_close()
+    if peer.path ~= nil then
+        uv.fs_unlink(peer.path)
+        peer.path = nil
+    end
+end
+
+-- The profile this host serves, as read_profiles names it, or vim.NIL (null) when not
+-- known. Named anew each time, so a renamed profile shows its new name.
+local function own_profile()
+    if peer.profile_dir == nil or peer.udd == nil then
+        return vim.NIL
+    end
+    local profiles = read_profiles(peer.udd)
+    local entry = profiles and profiles.by_dir[peer.profile_dir]
+    if entry == nil then
+        return vim.NIL
+    end
+    return { dir = entry.dir, name = entry.name }
+end
+
+-- The profile directories of `udd` whose storage for extension `extension_id` holds
+-- `token`. The browser keeps an extension's chrome.storage.local in
+-- <profile>/Local Extension Settings/<id>/, a LevelDB that appends each write to its
+-- .log file at once (and keeps it in an .ldb file once compacted).
+local function find_token(udd, extension_id, token)
+    local found = {}
+    for _, dir in ipairs(subdirs(udd)) do
+        local store = dir .. '/Local Extension Settings/' .. extension_id
+        local handle = uv.fs_scandir(store)
+        local hit = false
+        while handle ~= nil and not hit do
+            local name, kind = uv.fs_scandir_next(handle)
+            if name == nil then
+                break
+            end
+            if kind == 'file' and (string.match(name, '%.log$') or string.match(name, '%.ldb$')) then
+                local content = read_file(store .. '/' .. name)
+                hit = content ~= nil and string.find(content, token, 1, true) ~= nil
+            end
+        end
+        if hit then
+            found[#found + 1] = string.match(dir, '[^/]+$')
+        end
+    end
+    return found
+end
+
+-- Which profile this host serves: an extension cannot say, as it does not know the
+-- name of its own profile's folder, so it writes a fresh random token to its storage
+-- and this host looks for the folder holding it. Answers {data = {dir, name}} once
+-- found; the profile is then named in this host's answers to the others.
+local function identify(chan, req)
+    local token, extension_id = req['token'], req['extensionId']
+    if type(token) ~= 'string' or #token < 16 or #token > 128 or string.find(token, '[^%w]') then
+        return { error = 'Profile.identify needs a token of 16 to 128 letters and digits' }
+    end
+    -- part of a path: an extension id is 32 letters a to p
+    if type(extension_id) ~= 'string' or #extension_id ~= 32 or string.find(extension_id, '[^a-p]') then
+        return { error = 'Profile.identify needs the extension id' }
+    end
+    peer.answering = true
+    local ok, err = peer_listen()
+    if not ok then
+        return { error = err }
+    end
+    if peer.identifying then
+        return { error = 'already looking for a token' }
+    end
+    peer.identifying = true
+    local id = req['id']
+    local attempt = 0
+    local function look()
+        attempt = attempt + 1
+        local found = find_token(peer.udd, extension_id, token)
+        if #found == 0 and attempt < IDENTIFY_ATTEMPTS then
+            vim.fn.timer_start(IDENTIFY_INTERVAL_MS, look)
+            return
+        end
+        peer.identifying = false
+        if #found == 1 then
+            peer.profile_dir = found[1]
+            local profile = own_profile()
+            send_reply(chan, id, true, { data = profile ~= vim.NIL and profile or { dir = found[1] } })
+        elseif #found > 1 then
+            send_reply(chan, id, true, { error = 'more than one profile holds the token: ' .. table.concat(found, ', ') })
+        else
+            send_reply(chan, id, true, { error = 'no profile of ' .. peer.udd .. ' holds the token' })
+        end
+    end
+    -- after respond_to has taken this for a deferred reply, as every look is
+    vim.schedule(look)
+    return DEFERRED
+end
+
+-- After a scan that found nothing, asks the extension to identify itself again: the
+-- next tab list then carries the profile's name. Not while a scan runs, and not often,
+-- since each answer is a storage write.
+local function reidentify()
+    if peer.profile_dir ~= nil or peer.identifying or not peer.answering then
+        return
+    end
+    if peer.asked_at ~= nil and uv.now() - peer.asked_at < REIDENTIFY_GAP_MS then
+        return
+    end
+    peer.asked_at = uv.now()
+    ask_extension({ command = 'Profile.identify' }, PEER_SERVE_TIMEOUT_MS, function() end)
+end
+
+-- Answers request `line` from another host, through `respond(reply)`: {profile, res},
+-- where `res` is what this host's extension answered. Runs in the main loop.
+local function answer_peer(line, respond)
+    local decoded, req = pcall(vim.fn.json_decode, line)
+    if not decoded or type(req) ~= 'table' then
+        respond({ profile = vim.NIL, res = { error = 'not a request' } })
+        return
+    end
+    local function reply(res)
+        respond({ profile = own_profile(), res = res })
+    end
+    if not peer.answering then
+        reply({ error = 'Surfingkeys in that profile is not connected to its host yet, or too old to share its tabs' })
+        return
+    end
+    if req['command'] == 'Tabs.list' then
+        reidentify()
+        ask_extension({ command = 'Tabs.list' }, PEER_SERVE_TIMEOUT_MS, reply)
+    elseif req['command'] == 'Tabs.activate' then
+        if type(req['tabId']) ~= 'number' then
+            reply({ error = 'no tab was named' })
+            return
+        end
+        ask_extension({ command = 'Tabs.activate', tabId = req['tabId'], windowId = req['windowId'] },
+            PEER_SERVE_TIMEOUT_MS, reply)
+    else
+        reply({ error = 'unknown request ' .. tostring(req['command']) })
+    end
+end
+
+-- Reads one request line from another host on `client`, and writes the answer back.
+-- The socket callbacks run where nvim's API may not be called: the answer is made in
+-- the main loop.
+serve_peer = function(client)
+    local buffer, done = '', false
+    local function close()
+        if not client:is_closing() then
+            client:close()
+        end
+    end
+    client:read_start(function(err, chunk)
+        if done then
+            return
+        end
+        if err or chunk == nil then
+            done = true
+            close()
+            return
+        end
+        buffer = buffer .. chunk
+        local newline = string.find(buffer, '\n', 1, true)
+        if newline == nil then
+            if #buffer > PEER_REQUEST_MAX then
+                done = true
+                close()
+            end
+            return
+        end
+        done = true
+        client:read_stop()
+        local line = string.sub(buffer, 1, newline - 1)
+        vim.schedule(function()
+            answer_peer(line, function(reply)
+                if client:is_closing() then
+                    return
+                end
+                local encoded, text = pcall(vim.fn.json_encode, reply)
+                if not encoded then
+                    text = vim.fn.json_encode({ profile = vim.NIL, res = { error = 'the host could not encode its answer' } })
+                end
+                client:write(text .. '\n', close)
+            end)
+        end)
+    end)
+end
+
+-- Sends `message` to the host listening at `path` and calls `done(answer)` once, in the
+-- main loop, with its decoded answer -- or done(nil, why, gone), `gone` when no host
+-- listens there any more.
+local function ask_peer(path, message, timeout_ms, done)
+    local line = vim.fn.json_encode(message) .. '\n'
+    local pipe = uv.new_pipe(false)
+    local timer = uv.new_timer()
+    local buffer, settled = '', false
+    local function finish(text, why, gone)
+        if settled then
+            return
+        end
+        settled = true
+        timer:stop()
+        timer:close()
+        if not pipe:is_closing() then
+            pipe:close()
+        end
+        vim.schedule(function()
+            if text == nil then
+                done(nil, why, gone)
+                return
+            end
+            local decoded, answer = pcall(vim.fn.json_decode, text)
+            if decoded and type(answer) == 'table' then
+                done(answer)
+            else
+                done(nil, 'that profile gave an answer that is not one', false)
+            end
+        end)
+    end
+    timer:start(timeout_ms, 0, function()
+        finish(nil, 'that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds', false)
+    end)
+    pipe:connect(path, function(err)
+        if err then
+            -- Refused: the host that made it died without removing it (a host killed
+            -- outright does), and the next one to look would try it again. Removed only
+            -- when no process has its pid either: macOS also refuses a connection to a
+            -- live host whose queue of them is full, and removing that one's socket
+            -- would hide its profile until it restarts.
+            if string.find(err, 'ECONNREFUSED', 1, true) then
+                local pid = tonumber(string.match(path, '(%d+)%.sock$'))
+                local _, kerr = nil, nil
+                if pid ~= nil and pid > 0 then
+                    _, kerr = uv.kill(pid, 0)
+                end
+                if type(kerr) == 'string' and string.find(kerr, 'ESRCH', 1, true) then
+                    uv.fs_unlink(path)
+                end
+                finish(nil, 'that profile is no longer open', true)
+            elseif string.find(err, 'ENOENT', 1, true) then
+                finish(nil, 'that profile is no longer open', true)
+            else
+                finish(nil, 'could not reach that profile: ' .. err, false)
+            end
+            return
+        end
+        pipe:read_start(function(rerr, chunk)
+            if rerr or chunk == nil then
+                finish(nil, 'that profile closed the connection without answering', false)
+                return
+            end
+            buffer = buffer .. chunk
+            local newline = string.find(buffer, '\n', 1, true)
+            if newline ~= nil then
+                finish(string.sub(buffer, 1, newline - 1))
+            elseif #buffer > PEER_REPLY_MAX then
+                finish(nil, 'that profile answered with too much', false)
+            end
+        end)
+        pipe:write(line)
+    end)
+end
+
+-- The sockets of the other hosts of this browser: {pid, path} each.
+local function peer_sockets()
+    local list = {}
+    local handle = uv.fs_scandir(peer.dir)
+    while handle ~= nil do
+        local name = uv.fs_scandir_next(handle)
+        if name == nil then
+            break
+        end
+        local pid = tonumber(string.match(name, '^(%d+)%.sock$'))
+        local path = peer.dir .. '/' .. name
+        if pid ~= nil and path ~= peer.path then
+            list[#list + 1] = { pid = pid, path = path }
+        end
+    end
+    return list
+end
+
+-- One entry of the Peers.tabs answer, from what the host with pid `pid` answered.
+local function peer_entry(pid, answer, why)
+    if answer == nil then
+        return { peer = pid, profile = vim.NIL, tabs = {}, error = why }
+    end
+    local profile = type(answer['profile']) == 'table' and answer['profile'] or vim.NIL
+    local res = answer['res']
+    if type(res) == 'table' and type(res['data']) == 'table' and type(res['data']['tabs']) == 'table' then
+        local tabs = {}
+        for _, tab in ipairs(res['data']['tabs']) do
+            if type(tab) == 'table' then
+                tabs[#tabs + 1] = tab
+            end
+        end
+        return { peer = pid, profile = profile, tabs = tabs }
+    end
+    local said = type(res) == 'table' and res['error'] or nil
+    return { peer = pid, profile = profile, tabs = {}, error = type(said) == 'string' and said or 'that profile listed no tabs' }
+end
+
+-- The other profiles in the order of the browser's profile menu, unnamed ones last.
+local function order_peers(entries)
+    local profiles = read_profiles(peer.udd)
+    local rank = {}
+    for i, p in ipairs(profiles and profiles.list or {}) do
+        rank[p.dir] = i
+    end
+    local function rank_of(entry)
+        local dir = type(entry.profile) == 'table' and entry.profile.dir or nil
+        return rank[dir] or math.huge
+    end
+    table.sort(entries, function(a, b)
+        if rank_of(a) ~= rank_of(b) then
+            return rank_of(a) < rank_of(b)
+        end
+        return a.peer < b.peer
+    end)
+    return entries
+end
+
+-- Shortens `entries` until the reply fits in one native message: favicons go first,
+-- then a quarter of the longest list at a time, from its least recently used end.
+-- The palette loses the oldest tabs of a profile with thousands, rather than the
+-- connection everything else uses.
+local function fit_peers(id, entries)
+    local function size()
+        local ok, text = pcall(vim.fn.json_encode, { status = true, id = id, res = { data = { peers = entries } } })
+        return ok and #text or 0
+    end
+    local budget = NATIVE_MESSAGE_MAX - 1024
+    if size() <= budget then
+        return entries
+    end
+    for _, entry in ipairs(entries) do
+        for _, tab in ipairs(entry.tabs) do
+            tab['favIconUrl'] = nil
+        end
+    end
+    while size() > budget do
+        local longest = nil
+        for _, entry in ipairs(entries) do
+            if longest == nil or #entry.tabs > #longest.tabs then
+                longest = entry
+            end
+        end
+        if longest == nil or #longest.tabs == 0 then
+            return {}
+        end
+        for i = #longest.tabs, math.floor(#longest.tabs * 3 / 4) + 1, -1 do
+            longest.tabs[i] = nil
+        end
+    end
+    return entries
+end
+
+-- Every other open profile's tabs: {data = {peers = [{peer, profile, tabs}]}}, `peer`
+-- being the pid that Peers.activate names it by. A host that does not answer in time
+-- is listed with an `error` and no tabs; a socket nothing listens on is left out.
+local function peers_tabs(chan, req)
+    local ok, err = peer_listen()
+    if not ok then
+        return { error = err }
+    end
+    local others = peer_sockets()
+    if #others == 0 then
+        return { data = { peers = {} } }
+    end
+    local id = req['id']
+    local entries, left = {}, #others
+    for i, other in ipairs(others) do
+        ask_peer(other.path, { command = 'Tabs.list' }, PEER_LIST_TIMEOUT_MS, function(answer, why, gone)
+            entries[i] = (not gone) and peer_entry(other.pid, answer, why) or false
+            left = left - 1
+            if left > 0 then
+                return
+            end
+            local open = {}
+            for _, entry in ipairs(entries) do
+                if entry then
+                    open[#open + 1] = entry
+                end
+            end
+            send_reply(chan, id, true, { data = { peers = fit_peers(id, order_peers(open)) } },
+                'Peers.tabs, ' .. #open .. ' other profiles')
+        end)
+    end
+    return DEFERRED
+end
+
+-- Switches to tab `req.tabId` of the profile whose host is `req.peer`, and answers with
+-- what that profile's Surfingkeys observed afterwards, or why it could not.
+local function peers_activate(chan, req)
+    local pid = req['peer']
+    if type(pid) ~= 'number' or pid <= 0 or pid ~= math.floor(pid) then
+        return { error = 'no profile was named' }
+    end
+    if type(req['tabId']) ~= 'number' then
+        return { error = 'no tab was named' }
+    end
+    local ok, err = peer_listen()
+    if not ok then
+        return { error = err }
+    end
+    local path = peer.dir .. '/' .. string.format('%d', pid) .. '.sock'
+    if path == peer.path then
+        return { error = 'that tab is in this profile' }
+    end
+    local id = req['id']
+    ask_peer(path, { command = 'Tabs.activate', tabId = req['tabId'], windowId = req['windowId'] },
+        PEER_ACTIVATE_TIMEOUT_MS, function(answer, why)
+            local res = answer and answer['res']
+            if answer == nil then
+                res = { error = why }
+            elseif type(res) ~= 'table' then
+                res = { error = 'Surfingkeys in that profile gave no answer' }
+            end
+            send_reply(chan, id, true, res)
+        end)
+    return DEFERRED
+end
+
 -- Bytes received from the browser that do not yet make up a whole message.
 local stdin_buffer = ""
 
@@ -1105,8 +1709,25 @@ end
 -- request a reply answers, and is read separately from handling so that a request
 -- whose handling THROWS still carries it.
 local function respond_to(chan, text)
-    logw("stdin: " .. text .. "\n")
     local decoded, req = pcall(vim.fn.json_decode, text)
+    -- The extension's answer to a request of this host's own (ask_extension), never a
+    -- request itself: a reply to it would reach the extension as the answer to
+    -- whatever it asked last. Logged by size only, since it holds tab titles and URLs.
+    if decoded and type(req) == "table" and req['peerReply'] ~= nil then
+        logw("stdin: peerReply " .. tostring(req['peerReply']) .. ", " .. #text .. " bytes\n")
+        local finish = extension_waiting[req['peerReply']]
+        if finish ~= nil then
+            local said = req['res']
+            if req['status'] ~= true then
+                said = { error = type(said) == "string" and said or "Surfingkeys in that profile failed to answer" }
+            elseif type(said) ~= "table" then
+                said = { error = "Surfingkeys in that profile gave no answer" }
+            end
+            finish(said)
+        end
+        return
+    end
+    logw("stdin: " .. text .. "\n")
     local status, res
     if decoded then
         status, res = pcall(handle_input, chan, req)
@@ -1136,6 +1757,12 @@ function handle_input(id, data)
         return list_profiles()
     elseif data['command'] == 'Profile.open' then
         return open_profile(id, data)
+    elseif data['command'] == 'Profile.identify' then
+        return identify(id, data)
+    elseif data['command'] == 'Peers.tabs' then
+        return peers_tabs(id, data)
+    elseif data['command'] == 'Peers.activate' then
+        return peers_activate(id, data)
     end
 end
 
@@ -1185,6 +1812,7 @@ elseif vim.fn ~= nil then
             -- since "nothing decoded" also describes a split length header.
             if #data == 1 and data[1] == "" then
                 logw("qall: " .. tostring(current_server_port) .. "\n")
+                surfingkeys_peer_close()
                 vim.api.nvim_command('qall!')
                 return
             end
@@ -1199,6 +1827,16 @@ elseif vim.fn ~= nil then
             end
         end
     })
+    -- The other hosts of this browser find this one from the start, the palette in
+    -- another profile not waiting for this profile's first request. Scheduled, so the
+    -- search for the browser's data directory does not hold up the first reply.
+    vim.cmd('autocmd VimLeavePre * lua surfingkeys_peer_close()')
+    vim.schedule(function()
+        local ok, listening, err = pcall(peer_listen)
+        if not (ok and listening) then
+            logw("not listening for other profiles: " .. tostring(ok and err or listening) .. "\n")
+        end
+    end)
 else
     vim.api.nvim_command('quit')
 end

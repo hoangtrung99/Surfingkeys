@@ -493,6 +493,184 @@ describe('keys', () => {
     });
 });
 
+// Chromium: the tabs of the browser's other open profiles, from the native host
+// (background getPeerTabs), after this profile's tabs.
+describe("the browser's other profiles", () => {
+    const PEERS = [
+        { peer: 41, profile: { dir: 'Profile 1', name: 'Work' }, tabs: [
+            tab(7, 'Quarterly plan', 'https://docs.test/plan', { windowId: 3 }),
+            tab(8, 'Inbox — work', 'https://mail.test/work', { windowId: 3 }),
+            tab(9, 'Q3', 'https://plan.test/q3', { windowId: 4 }),
+        ] },
+        // its name could not be found
+        { peer: 42, profile: null, tabs: [tab(5, 'Unnamed one', 'https://unnamed.test/')] },
+        // did not answer in time: left out
+        { peer: 43, profile: { dir: 'Profile 3', name: 'Slow' }, tabs: [], error: 'that profile did not answer within 1.5 seconds' },
+    ];
+    const headings = () => Array.from(ui().querySelectorAll('.sk_palette_group')).map((h) => h.textContent);
+    // the list as shown: headings and rows, in order
+    const shown = () => Array.from(ui().querySelector('#sk_omnibarSearchResult>ul').children)
+        .map((c) => (c.classList.contains('sk_palette_group') ? `# ${c.textContent}` : titleOf(c)));
+    const notice = () => {
+        const n = ui().querySelector('.sk_palette_notice');
+        return n ? n.textContent : null;
+    };
+    const metaOf = (li) => li.querySelector('.sk_palette_meta').textContent;
+    const answerPeers = (peers) => f.held.filter((h) => h.message.action === 'getPeerTabs').pop().respond({ peers });
+    const answerSwitch = (reply) => f.held.filter((h) => h.message.action === 'activatePeerTab').pop().respond(reply);
+
+    beforeEach(() => {
+        f.answers.getPeerTabs = () => ({ peers: PEERS });
+    });
+    afterEach(() => {
+        delete f.answers.getPeerTabs;
+    });
+
+    test('empty input: this profile\'s tabs, then each other profile\'s under a heading naming it', async () => {
+        await open();
+        expect(sentAll('getPeerTabs')).toHaveLength(1);
+        expect(shown()).toEqual(TABS.slice(1, 9).map((t) => t.title).concat([
+            '# Tabs in Work', 'Quarterly plan', 'Inbox — work', 'Q3',
+            '# Tabs in another profile', 'Unnamed one',
+        ]));
+        expect(['Quarterly plan', 'Q3'].map((t) => metaOf(rowTitled(t)))).toEqual(['Work', 'Work']);
+        expect(metaOf(rowTitled('Unnamed one'))).toBe('Another profile');
+        expect(labelOf(rowTitled('Q3'))).toBe('Switch to Tab');
+        // the first row is still this profile's last tab
+        expect(focused()).toBe(lis()[0]);
+    });
+
+    test('asked only once this profile\'s tabs are in', async () => {
+        delete f.answers.tabSwitcherTabs;
+        await open();
+        expect(sentAll('getPeerTabs')).toHaveLength(0);
+        f.held.find((h) => h.message.action === 'tabSwitcherTabs').respond({ tabs: TABS });
+        await f.settle();
+        expect(sentAll('getPeerTabs')).toHaveLength(1);
+    });
+
+    test('typing filters and ranks within each group, as for this profile\'s tabs', async () => {
+        await open();
+        await type('plan');
+        // a title hit beats a host hit; the unnamed profile has no match and no heading
+        expect(shown().slice(0, 4)).toEqual(['Kế hoạch tuần', '# Tabs in Work', 'Quarterly plan', 'Q3']);
+        expect(headings()).toEqual(['Tabs in Work']);
+    });
+
+    test('moving through the rows passes over the headings', async () => {
+        await open();
+        for (let i = 0; i < 8; i++) {
+            f.press('<Ctrl-n>', { target: input() });
+        }
+        expect(titleOf(focused())).toBe('Quarterly plan');
+        for (let i = 0; i < 3; i++) {
+            f.press('<Ctrl-n>', { target: input() });
+        }
+        expect(titleOf(focused())).toBe('Unnamed one');
+        expect(ui().querySelectorAll('.focused')).toHaveLength(1);
+    });
+
+    test('Enter on another profile\'s tab asks that profile to switch, and closes once it has', async () => {
+        delete f.answers.getPeerTabs;
+        await open();
+        answerPeers(PEERS);
+        await f.settle();
+        await type('quarterly');
+        f.press('<Enter>', { target: input() });
+        expect(sentOne('activatePeerTab')).toEqual(expect.objectContaining({ peer: 41, tabId: 7, windowId: 3 }));
+        expect(sentAll('focusTab')).toHaveLength(0);
+        expect(isOpen()).toBe(true);
+        await f.settle();
+        expect(notice()).toBe('Switching to Work…');
+        answerSwitch({ tab: { tabId: 7, windowId: 3, active: true, focused: true } });
+        await f.settle();
+        expect(ui().style.display).toBe('none');
+    });
+
+    test('a switch that failed is said, the palette stays, and the row stays the one Enter picks', async () => {
+        await open();
+        await type('quarterly');
+        f.press('<Enter>', { target: input() });
+        await f.settle();
+        answerSwitch({ error: 'that tab is no longer open' });
+        await f.settle();
+        expect(isOpen()).toBe(true);
+        expect(notice()).toBe('Could not switch to that tab: that tab is no longer open.');
+        expect(ui().querySelector('.sk_palette_notice').classList.contains('sk_palette_error')).toBe(true);
+        expect(titleOf(focused())).toBe('Quarterly plan');
+        f.press('<Enter>', { target: input() });
+        expect(sentAll('activatePeerTab')).toHaveLength(2);
+        // typing clears what was said
+        answerSwitch({ error: 'that profile is no longer open' });
+        await f.settle();
+        await type('quarterly p');
+        expect(notice()).toBeNull();
+    });
+
+    test('a click switches the same way, one switch at a time', async () => {
+        await open();
+        rowTitled('Q3').onclick();
+        rowTitled('Quarterly plan').onclick();
+        f.press('<Enter>', { target: input() });
+        expect(sentOne('activatePeerTab')).toEqual(expect.objectContaining({ peer: 41, tabId: 9, windowId: 4 }));
+        expect(isOpen()).toBe(true);
+        await f.settle();
+        expect(titleOf(focused())).toBe('Q3');
+    });
+
+    test('a list or a switch answered after the palette closed acts on nothing', async () => {
+        delete f.answers.getPeerTabs;
+        await open();
+        const firstList = f.held.filter((h) => h.message.action === 'getPeerTabs').pop();
+        await open();  // closes
+        await open();  // and again
+        firstList.respond({ peers: [{ peer: 99, profile: { dir: 'Old', name: 'Stale' }, tabs: [tab(1, 'Stale tab', 'https://stale.test/')] }] });
+        await f.settle();
+        expect(headings()).toEqual([]);
+        answerPeers(PEERS);
+        await f.settle();
+        expect(headings()).toEqual(['Tabs in Work', 'Tabs in another profile']);
+
+        await type('quarterly');
+        f.press('<Enter>', { target: input() });
+        const pending = f.held.filter((h) => h.message.action === 'activatePeerTab').pop();
+        await open();  // closes
+        await open();
+        pending.respond({ tab: { tabId: 7, windowId: 3, active: true, focused: true } });
+        await f.settle();
+        expect(isOpen()).toBe(true);
+        expect(notice()).toBeNull();
+    });
+
+    test('a list arriving late keeps the focus where it was', async () => {
+        delete f.answers.getPeerTabs;
+        await open();
+        await type('inbox');
+        expect(titleOf(focused())).toBe('Inbox');
+        f.press('<Tab>', { target: input() });
+        const picked = titleOf(focused());
+        answerPeers(PEERS);
+        await f.settle();
+        expect(titles()).toContain('Inbox — work');
+        expect(titleOf(focused())).toBe(picked);
+    });
+
+    test('Ctrl-d on another profile\'s tab closes nothing', async () => {
+        await open();
+        await type('quarterly');
+        f.press('<Ctrl-d>', { target: input() });
+        expect(sentAll('closeTabByIds')).toHaveLength(0);
+        expect(titles()).toContain('Quarterly plan');
+    });
+
+    test('a private window\'s palette does not ask for them', async () => {
+        data.tabs = [Object.assign({}, CURRENT, { incognito: true })].concat(TABS.slice(1));
+        await open();
+        expect(sentAll('getPeerTabs')).toHaveLength(0);
+        expect(headings()).toEqual([]);
+    });
+});
+
 describe('actions', () => {
     async function openActions() {
         await open();
