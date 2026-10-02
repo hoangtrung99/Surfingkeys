@@ -122,6 +122,7 @@ module.exports = (env, argv) => {
             '**/images/*',
             '**/neovim.*',
             '**/pdf_viewer.*',
+            '**/newtab.*',
         ]
     };
     const copyPatterns = [
@@ -145,7 +146,10 @@ module.exports = (env, argv) => {
     // adapter passes an nvimServer -- which is Chrome and Firefox, but not Safari,
     // whose native host is the app and runs no neovim.
     if (browser === "chrome") {
-        pagesCopyOptions.ignore = [];
+        // The new tab page (README: "New tab page") is for the unpacked Chromium
+        // builds only: the store package stays as listed, and the browser flag
+        // that turns the page on names the unpacked builds' extension ID.
+        pagesCopyOptions.ignore = STORE ? ['**/newtab.*'] : [];
     } else if (browser === "firefox") {
         pagesCopyOptions.ignore = pagesCopyOptions.ignore.filter((p) => p !== '**/neovim.*');
     }
@@ -155,6 +159,9 @@ module.exports = (env, argv) => {
     }
     if (browser === "chrome") {
         moduleEntries['api'] = './src/user_scripts/index.js';
+        if (!STORE) {
+            entry['pages/newtab'] = './src/content_scripts/newtab.js';
+        }
         const chromeOnlyCopyPatterns = [
             { from: 'node_modules/pdfjs-dist/cmaps', to: 'pages/cmaps' },
             { from: 'node_modules/pdfjs-dist/build/pdf.min.mjs', to: 'pages' },

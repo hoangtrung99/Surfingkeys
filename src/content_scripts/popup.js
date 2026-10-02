@@ -24,6 +24,9 @@ document.querySelector('header h1').textContent = chrome.runtime.getManifest().n
 let blocklist = null;
 let site = null;  // the web origin of the active tab, the key the blocklist uses for it
 let localFile = false;
+// Surfingkeys' own pages (help, settings, the new tab page) run Surfingkeys,
+// but no site switch can name them: only "All sites" turns it off there.
+let ownPage = false;
 // which of the settings' blocklistPattern and lurkingPattern take the page, as
 // its own Surfingkeys answers: they live in the settings snippet, never here
 let patterns = {};
@@ -34,8 +37,9 @@ function say(text) {
     $('status').textContent = text;
 }
 
-// The blocklist names web sites by origin: browser pages and extension pages
-// have no Surfingkeys to switch, and local files no site to switch it for.
+// The blocklist names web sites by origin: browser pages and other extensions'
+// pages have no Surfingkeys to switch, Surfingkeys' own pages and local files
+// no site to switch it for.
 function webOrigin(url) {
     try {
         const u = new URL(url);
@@ -66,10 +70,12 @@ function renderSwitches() {
             : patterns.lurking ? 'Lurking here: lurkingPattern in your settings' : 'On';
     } else {
         $('siteLabel').textContent = 'This page';
-        siteSwitch.checked = false;
+        siteSwitch.checked = ownPage && !offEverywhere;
         siteSwitch.disabled = true;
         // a local file has no origin of its own to turn off (URL.origin is "null")
-        $('siteNote').textContent = localFile ? 'Local files have no site switch' : 'Surfingkeys does not run here';
+        $('siteNote').textContent = localFile ? 'Local files have no site switch'
+            : !ownPage ? 'Surfingkeys does not run here'
+            : offEverywhere ? 'Off, with all sites' : 'Surfingkeys\' own page: no site switch';
     }
     // tabs with Surfingkeys in them set their own icon when the blocklist changes;
     // this is the icon of the others
@@ -105,6 +111,7 @@ chrome.tabs.query({active: true, lastFocusedWindow: true}, (tabs) => {
     const url = tab ? tab.url || tab.pendingUrl || '' : '';
     site = webOrigin(url);
     localFile = url.startsWith('file:');
+    ownPage = url.startsWith(chrome.runtime.getURL('/'));
     RUNTIME('getSettings', {key: 'blocklist'}, (resp) => {
         blocklist = (resp && resp.settings && resp.settings.blocklist) || {};
         renderSwitches();

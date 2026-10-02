@@ -3067,6 +3067,41 @@ describe('start', () => {
         });
     });
 
+    // pages/newtab.html takes the browser's new tab page's place and goes on to
+    // itself with ?focus, so the tab reports Surfingkeys' address instead
+    describe('sessions with the new tab page open', () => {
+        it('does not save it, whatever its query or fragment, but keeps other extension pages', () => {
+            const {chrome, dispatch, stored} = bootstrap({browser: {settings: {sessions: {}}}});
+            chrome.state.tabs = [
+                {id: 1, index: 0, windowId: 1, url: 'chrome-extension://surfingkeys/pages/newtab.html?focus'},
+                {id: 2, index: 1, windowId: 1, url: 'https://keep/'},
+                {id: 3, index: 2, windowId: 1, url: 'chrome-extension://surfingkeys/pages/newtab.html'},
+                {id: 4, index: 0, windowId: 2, url: 'chrome-extension://surfingkeys/pages/newtab.html#top'},
+                {id: 5, index: 1, windowId: 2, url: 'chrome-extension://surfingkeys/pages/options.html'},
+                {id: 6, index: 2, windowId: 2, url: 'chrome-extension://surfingkeys/pages/newtab.html.bak'},
+            ];
+            dispatch({action: 'createSession', name: 'work'}, senderFor(12));
+            expect(stored().sessions.work.tabs).toEqual([
+                ['https://keep/'],
+                ['chrome-extension://surfingkeys/pages/options.html', 'chrome-extension://surfingkeys/pages/newtab.html.bak'],
+            ]);
+        });
+
+        it('closes it, with the browser\'s own, after restoring a session', () => {
+            const {chrome, dispatch} = bootstrap({
+                browser: {settings: {sessions: {work: {tabs: [['https://1/']]}}}},
+            });
+            chrome.state.tabs = [
+                {id: 41, index: 0, windowId: 1, url: 'chrome-extension://surfingkeys/pages/newtab.html?focus'},
+                {id: 42, index: 1, windowId: 1, url: 'https://keep/'},
+                {id: 43, index: 2, windowId: 1, url: 'chrome://newtab/'},
+                {id: 44, index: 3, windowId: 1, url: 'chrome-extension://surfingkeys/pages/start.html'},
+            ];
+            dispatch({action: 'openSession', name: 'work'}, senderFor(12));
+            expect(chrome.tabs.remove).toHaveBeenCalledWith([41, 43]);
+        });
+    });
+
     describe('user script registration', () => {
         const snippetCode = (snippets) =>
             `import('./api.js').then((module) => {module.default("chrome-extension://surfingkeys/", ` +

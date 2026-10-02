@@ -5,7 +5,7 @@
 // nothing heavier than themes.js: the popup opens on every click of the
 // toolbar button and has to be up at once.
 import { RUNTIME } from './runtime.js';
-import { DEFAULT_THEME, NO_THEME, PALETTES, THEME_IDS, THEME_KEY } from './themes.js';
+import { AUTO_THEME, NO_THEME, PAIR_KEY, PALETTES, THEME_IDS, THEME_KEY, themeInUse as drawnTheme } from './themes.js';
 
 // the same swatches as the theme menu (ui/themeMenu.js), in its order
 export const THEME_CHOICES = THEME_IDS.map((id) => {
@@ -16,10 +16,11 @@ export const THEME_CHOICES = THEME_IDS.map((id) => {
     id: NO_THEME, name: 'Surfingkeys', bg: '#ffffff', dots: ['#000000', '#b90c0c', '#4b3acc'], light: true,
 });
 
-// The theme a stored pick shows: nothing picked yet is the default, as in
-// content_scripts/theme.js.
-export function themeInUse(stored) {
-    return stored === NO_THEME || PALETTES.hasOwnProperty(stored) ? stored : DEFAULT_THEME;
+// The theme a stored pick shows, as content_scripts/theme.js draws it: nothing
+// picked yet is the default, and Auto the side of the stored pair (`pair`) the
+// system is on (`systemDark`).
+export function themeInUse(stored, pair, systemDark) {
+    return drawnTheme(stored, pair, !!systemDark);
 }
 
 export function themeName(id) {
@@ -43,17 +44,39 @@ export function pageTokens(id) {
     return `:root{${tokens(PALETTES[themeInUse(id)])}}`;
 }
 
-// Calls back with the theme in use, then again whenever it changes, whichever
-// page or tab changed it.
+// Calls back with the theme in use, then again whenever it changes: a pick made
+// in any page or tab, a new Auto pair, or, with Auto picked, the system going
+// light or dark. Auto must be resolved here with the pair and the system, as
+// theme.js does: read as no pick at all, it draws the default (dark) theme on a
+// light system, in colours no Surfingkeys panel on the same screen has.
 export function watchTheme(cb) {
-    chrome.storage.local.get(THEME_KEY, (items) => {
-        cb(themeInUse(!chrome.runtime.lastError && items ? items[THEME_KEY] : undefined));
+    const stored = {};
+    // a change landing before the first read answers is newer than that answer
+    const changed = new Set();
+    const systemDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    const update = () => cb(themeInUse(stored[THEME_KEY], stored[PAIR_KEY], systemDark && systemDark.matches));
+    chrome.storage.local.get([THEME_KEY, PAIR_KEY], (items) => {
+        const read = !chrome.runtime.lastError && items ? items : {};
+        [THEME_KEY, PAIR_KEY].forEach((k) => {
+            changed.has(k) || (stored[k] = read[k]);
+        });
+        update();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.hasOwnProperty(THEME_KEY)) {
-            cb(themeInUse(changes[THEME_KEY].newValue));
+        const ours = [THEME_KEY, PAIR_KEY].filter((k) => changes.hasOwnProperty(k));
+        if (area === 'local' && ours.length) {
+            ours.forEach((k) => {
+                changed.add(k);
+                stored[k] = changes[k].newValue;
+            });
+            update();
         }
     });
+    if (systemDark && systemDark.addEventListener) {
+        systemDark.addEventListener('change', () => {
+            stored[THEME_KEY] === AUTO_THEME && update();
+        });
+    }
 }
 
 // localData stores the pick and sends it to every open tab, which restyles

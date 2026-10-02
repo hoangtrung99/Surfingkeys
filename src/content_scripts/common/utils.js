@@ -1,6 +1,7 @@
 import KeyboardUtils from './keyboardUtils';
 import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import { snippetsRevision } from '../../common/utils.js';
+import { faviconUrl } from './favicon.js';
 
 const colors = [
     '#4169E1', // Royal Blue
@@ -1150,7 +1151,7 @@ function rotateInput(inputs, backward, curr, str) {
 function attachFaviconToImgSrc(tab, imgEl) {
     const browserName = getBrowserName();
     if (browserName === "Chrome") {
-        imgEl.src = chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(tab.url)}`);
+        imgEl.src = faviconUrl(tab.url);
     } else if (browserName.startsWith("Safari")) {
         imgEl.src = new URL(tab.url).origin + "/favicon.ico";
     } else {

@@ -4,6 +4,7 @@ import {
 } from './common/utils.js';
 import { marked } from 'marked';
 import { pageTokens, watchTheme } from './common/quickControls.js';
+import { renderTopSites } from './common/topSites.js';
 import createWelcome from './welcome.js';
 
 const screen1 = document.querySelector("#screen1");
@@ -39,11 +40,7 @@ watchTheme((id) => {
 setTimeout(() => document.body.classList.add('sk_ready'), 300);
 
 RUNTIME("getTopSites", null, function(response) {
-    var urls = response.urls.map(function(u) {
-        const favUrl = chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(u.url)}`);
-        return `<li><a href="${u.url}"><i style="background:url(${favUrl}) no-repeat"></i>${u.title}</a></li>`;
-    });
-    setSanitizedContent(document.querySelector("#topSites>ul"), urls.join("\n"));
+    renderTopSites(document.querySelector("#topSites>ul"), response.urls);
     var source = document.getElementById('quickIntroSource').innerHTML;
     setSanitizedContent(document.querySelector('#quickIntro'), marked.parse(source));
 

@@ -37,12 +37,11 @@ body:not(.sk_ready) #content {
         grid-template-columns: 1fr;
     }
 }
-#topSites i {
+/* common/topSites.js; markdown.css gives images a white background */
+#topSites img {
     vertical-align: middle;
-    margin-right: 4px;
-    width: 18px;
-    height: 18px;
-    display: inline-block;
+    margin-right: 6px;
+    background: none;
 }
 
 #back {

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="color-scheme" content="light dark">
+        <title>New Tab</title>
+        <!-- filled by newtab.js, before the body is parsed -->
+        <style id="sk_page_tokens"></style>
+        <!-- First, ahead of the stylesheets a script would wait for: it may send
+             the tab on to newtab.html?focus (content_scripts/newtab/page.js), and
+             it loads Surfingkeys (../content.js) itself once the page stays. -->
+        <script src="newtab.js"></script>
+        <link rel="stylesheet" href="../content.css">
+        <link rel="stylesheet" href="quickControls.css">
+        <link rel="stylesheet" href="newtab.css">
+    </head>
+    <body>
+        <nav id="sk_bar" aria-label="Bookmarks bar">
+            <ul id="sk_bar_items"></ul>
+            <div id="sk_bar_more" hidden>
+                <button type="button" class="sk_bm sk_more" aria-expanded="false" aria-label="More bookmarks" title="More bookmarks">»</button>
+            </div>
+        </nav>
+        <main id="content">
+            <section id="sk_top" aria-labelledby="sk_top_title" hidden>
+                <h2 id="sk_top_title">Top Sites</h2>
+                <ul></ul>
+            </section>
+        </main>
+        <p id="sk_status" class="sk_toast" role="status" aria-live="polite"></p>
+    </body>
+</html>

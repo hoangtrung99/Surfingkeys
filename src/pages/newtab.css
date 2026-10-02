@@ -1,0 +1,203 @@
+/* The new tab page (newtab.html). Colours come from the theme in use: newtab.js
+   puts its tokens on :root (common/quickControls.js pageTokens); before they are
+   in, the browser's own light or dark canvas, never a white flash. */
+html {
+    background: var(--bg, Canvas);
+    color: var(--text, CanvasText);
+}
+body {
+    margin: 0;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* until those tokens are in (newtab.js) */
+html:not(.sk_ready) body {
+    visibility: hidden;
+}
+
+/* --- the bookmarks bar (newtab/bookmarksBar.js) ------------------------- */
+#sk_bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 34px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--s0);
+    background: var(--mantle);
+}
+#sk_bar ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+/* one row: what does not fit is hidden here and listed by the "»" menu */
+#sk_bar_items {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 2px;
+    overflow: hidden;
+}
+#sk_bar_items > li,
+#sk_bar_more {
+    flex: none;
+}
+.sk_bm {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 180px;
+    height: 26px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.sk_bm:hover,
+.sk_bm[aria-expanded="true"] {
+    background: var(--s0);
+}
+.sk_bm:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+.sk_bm img {
+    flex: none;
+    width: 16px;
+    height: 16px;
+}
+.sk_bm_title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sk_bm_title:empty {
+    display: none;
+}
+.sk_icon_folder {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    background: var(--overlay);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.sk_more {
+    font-size: 16px;
+}
+/* a bookmarklet: listed, never followed (newtab/links.js) */
+.sk_bm_disabled,
+.sk_bm_disabled:hover {
+    background: none;
+    opacity: .55;
+    cursor: not-allowed;
+}
+.sk_bar_note {
+    padding: 0 8px;
+    color: var(--overlay);
+}
+
+/* menus: position: fixed, placed by bookmarksBar.js, so nothing clips them */
+.sk_menu {
+    position: fixed;
+    z-index: 10;
+    box-sizing: border-box;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--s1);
+    border-radius: 8px;
+    background: var(--mantle);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+}
+.sk_menu .sk_bm {
+    display: flex;
+    width: 100%;
+    max-width: none;
+}
+.sk_menu .sk_bm_folder::after {
+    content: "›";
+    margin-left: auto;
+    padding-left: 12px;
+    color: var(--overlay);
+}
+.sk_menu_empty {
+    padding: 4px 8px;
+    color: var(--overlay);
+}
+
+/* --- top sites (common/topSites.js) ------------------------------------ */
+#content {
+    max-width: 880px;
+    margin: 14vh auto 48px;
+    padding: 0 24px;
+}
+#sk_top h2 {
+    margin: 0 0 12px;
+    color: var(--sub);
+    font-size: 13px;
+    font-weight: 600;
+}
+#sk_top ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+#sk_top a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 8px 12px;
+    border-radius: 12px;
+    color: var(--text);
+    text-decoration: none;
+}
+#sk_top a:hover {
+    background: var(--s0);
+}
+#sk_top a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+#sk_top img {
+    padding: 12px;
+    border-radius: 50%;
+    background: var(--s0);
+}
+#sk_top a:hover img {
+    background: var(--s1);
+}
+#sk_top a span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* what the page has to say (newtab/page.js), out of sight while empty */
+.sk_toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    max-width: calc(100% - 32px);
+    margin: 0;
+    transform: translateX(-50%);
+    box-sizing: border-box;
+}
+.sk_toast:not(:empty) {
+    padding: 8px 14px;
+    border: 1px solid var(--s1);
+    border-radius: 8px;
+    background: var(--mantle);
+    color: var(--text);
+}

@@ -38,6 +38,24 @@ Opens once, right after install (and any time from the popup's *Getting started*
 
 ![Welcome page](docs/images/welcome.png)
 
+### New tab page
+
+A start page (Chromium builds) with your bookmarks bar and your top sites, in the theme you picked, and Surfingkeys' keys working the moment it opens: <kbd>f</kbd> reaches every bookmark and folder, <kbd>t</kbd> opens a URL. Folders open as dropdowns and folders inside them as cascading submenus; what does not fit in the row goes into a <kbd>»</kbd> menu, as on Chrome's own bar, and the bar follows your bookmark changes as you make them. `chrome://` and `file://` bookmarks open too; bookmarklets are listed but cannot run from this page.
+
+Surfingkeys does not take over the new tab page by itself. In **Helium**:
+
+1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`.
+2. Relaunch Helium.
+3. No prompt about your new tab page is expected. Should one appear, click nothing in it: its *Change it back* turns off all of Surfingkeys, not only this page.
+
+Good to know:
+
+- The keyboard starts in the page, not in the address bar, which shows the page's `chrome-extension://` address. <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>T</kbd> and then typing no longer types a URL: press <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>L</kbd> first, or use <kbd>t</kbd>.
+- Helium uses the flag in incognito windows too, where the page loads only if Surfingkeys is allowed in incognito (`helium://extensions` → Surfingkeys → *Details* → *Allow in Incognito*).
+- Your settings script (Advanced mode) does not run on Surfingkeys' own pages, the help page alike, so its mappings are missing here: the browser lets no user script into extension pages. Basic mode's remaps (Settings → Keys) work here as everywhere.
+- Plain Chrome has no such flag: open the page at the address above, bookmark it, or make it the startup page (Settings → *On startup* → *Open a specific page*).
+- Session save (`ZZ`, `createSession`) skips the page like any new tab, and restoring a session closes it.
+
 ### Toolbar popup
 
 Click the Surfingkeys icon in the toolbar for quick controls:

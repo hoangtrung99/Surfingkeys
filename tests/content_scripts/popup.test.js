@@ -105,6 +105,15 @@ describe('quick controls', () => {
         expect(css).not.toContain('undefined');
     });
 
+    test('draws Auto as the side of the pair the system is on', () => {
+        expect(themeInUse('auto', undefined, false)).toBe('latte');
+        expect(themeInUse('auto', undefined, true)).toBe('mocha');
+        expect(themeInUse('auto', {dark: 'nord', light: 'dawn'}, true)).toBe('nord');
+        expect(themeInUse('auto', {dark: 'nord', light: 'dawn'}, false)).toBe('dawn');
+        // a side that is not of its kind is the default's
+        expect(themeInUse('auto', {dark: 'latte', light: 'mocha'}, false)).toBe('latte');
+    });
+
     test('follows the system with Surfingkeys\' own look', () => {
         const css = pageTokens(NO_THEME);
         expect(css).toMatch(/^:root\{--bg:#ffffff;.*\}@media \(prefers-color-scheme: dark\)\{:root\{--bg:#1e1e2e;/);
@@ -217,7 +226,7 @@ describe('popup', () => {
 
     test.each([
         ['a browser page', 'chrome://extensions/', 'Surfingkeys does not run here'],
-        ['an extension page', 'chrome-extension://surfingkeys/pages/options.html', 'Surfingkeys does not run here'],
+        ['another extension\'s page', 'chrome-extension://another/pages/options.html', 'Surfingkeys does not run here'],
         ['no tab at all', '', 'Surfingkeys does not run here'],
         ['a local file', 'file:///home/user/notes.html', 'Local files have no site switch'],
     ])('offers no site switch on %s', (what, url, note) => {
@@ -225,6 +234,23 @@ describe('popup', () => {
         expect($('siteSwitch').disabled).toBe(true);
         expect($('siteNote').textContent).toBe(note);
         expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['the new tab page', 'chrome-extension://surfingkeys/pages/newtab.html?focus'],
+        ['the settings page', 'chrome-extension://surfingkeys/pages/options.html#keys'],
+    ])('shows Surfingkeys on, with no site switch, on its own page: %s', (what, url) => {
+        const {$} = openPopup({url});
+        expect($('siteSwitch').disabled).toBe(true);
+        expect($('siteSwitch').checked).toBe(true);
+        expect($('siteNote').textContent).toBe('Surfingkeys\' own page: no site switch');
+        expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('shows its own page off when all sites are', () => {
+        const {$} = openPopup({url: 'chrome-extension://surfingkeys/pages/newtab.html?focus', blocklist: {'.*': 1}});
+        expect($('siteSwitch').checked).toBe(false);
+        expect($('siteNote').textContent).toBe('Off, with all sites');
     });
 
     test('picks a theme the way the theme menu does, and wears it', () => {
@@ -240,6 +266,22 @@ describe('popup', () => {
         expect(sent.find((m) => m.action === 'localData')).toMatchObject({data: {paletteTheme: 'nord'}});
         expect($('sk_page_tokens').textContent).toContain(`--bg:${PALETTES.nord.bg};`);
         expect($('status').textContent).toBe('Theme: Nord');
+    });
+
+    test('wears Auto as the side of the pair the system is on, and follows the system', () => {
+        const media = {matches: false, listeners: [], addEventListener: (type, fn) => media.listeners.push(fn)};
+        window.matchMedia = jest.fn(() => media);
+        try {
+            const {$} = openPopup({theme: 'auto'});
+            expect(window.matchMedia).toHaveBeenCalledWith('(prefers-color-scheme: dark)');
+            expect($('sk_page_tokens').textContent).toContain(`--bg:${PALETTES.latte.bg};`);
+            expect($('themeName').textContent).toBe('Catppuccin Latte');
+            media.matches = true;
+            media.listeners.forEach((fn) => fn());
+            expect($('sk_page_tokens').textContent).toContain(`--bg:${PALETTES.mocha.bg};`);
+        } finally {
+            delete window.matchMedia;
+        }
     });
 
     test('follows a pick made elsewhere', () => {

@@ -2047,6 +2047,15 @@ function start(browser) {
     self.quit = function(message, sender, sendResponse) {
         _quit();
     };
+    // Surfingkeys' new tab page (pages/newtab.html, with any query or fragment)
+    // is a new tab as much as the browser's: a session neither saves it nor leaves
+    // it open when restored. Matching the browser's address alone misses it, since
+    // the page goes on to itself with ?focus at once (README: "New tab page") and
+    // the tab then reports that address.
+    const newTabPage = chrome.runtime.getURL("/pages/newtab.html");
+    function isNewTab(url) {
+        return url === newTabUrl || (typeof url === "string" && url.replace(/[?#].*$/, "") === newTabPage);
+    }
     self.createSession = function(message, sender, sendResponse) {
         loadSettings('sessions', function(data) {
             chrome.tabs.query({}, function(tabs) {
@@ -2056,7 +2065,7 @@ function start(browser) {
                         if (!tabGroup.hasOwnProperty(tab.windowId)) {
                             tabGroup[tab.windowId] = [];
                         }
-                        if (tab.url !== newTabUrl) {
+                        if (!isNewTab(tab.url)) {
                             tabGroup[tab.windowId].push(tab.url);
                         }
                     }
@@ -2099,10 +2108,10 @@ function start(browser) {
                         });
                     });
                 }
-                chrome.tabs.query({
-                    url: newTabUrl
-                }, function(tabs) {
-                    chrome.tabs.remove(tabs.map(function(t) {
+                chrome.tabs.query({}, function(tabs) {
+                    chrome.tabs.remove(tabs.filter(function(t) {
+                        return isNewTab(t.url);
+                    }).map(function(t) {
                         return t.id;
                     }));
                 });
