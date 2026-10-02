@@ -170,6 +170,21 @@ describe('profile menu', () => {
         expect(opened()).toHaveLength(2);
     });
 
+    // The host stopped waiting on the browser, which had the request by then and may
+    // still carry it out: not a failure, and not styled as one.
+    test('a switch the browser has not confirmed is said as such, not as a failure', () => {
+        openWith({ profiles: PROFILES });
+        rows()[2].onclick();
+        answer('openProfile', {
+            error: 'the browser did not confirm it within 15 seconds; it may still open the profile once it responds',
+            kind: 'pending',
+        });
+        expect(note()).toBe('José: not confirmed yet — the browser may still open it.');
+        expect(omnibar.resultsDiv.querySelector('.sk_profile_error')).toBeNull();
+        expect(front.hidePopup).not.toHaveBeenCalled();
+        expect(omnibar.resultsDiv.querySelector('li.focused .title').textContent).toBe('José');
+    });
+
     test('an answer that comes after the menu closed acts on nothing', () => {
         openWith({ profiles: PROFILES });
         menu.onEnter();

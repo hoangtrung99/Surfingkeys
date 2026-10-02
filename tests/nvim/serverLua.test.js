@@ -393,7 +393,10 @@ int main(int argc, char **argv) {
     test('a browser that does not confirm in 15 seconds: the outcome is said to be unknown, not a failure', async () => {
         const reply = await slow;
         expect(Date.now() - slowSent).toBeGreaterThanOrEqual(14500);
-        expect(reply.res.error).toBe('the browser did not confirm it within 15 seconds; it may still open the profile once it responds');
+        expect(reply.res).toEqual({
+            pending: true,
+            error: 'the browser did not confirm it within 15 seconds; it may still open the profile once it responds',
+        });
     }, 25000);
 
     test('the launcher printed to ITS stdout, and none of it reached the host\'s', () => {

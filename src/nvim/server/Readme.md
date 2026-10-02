@@ -188,8 +188,9 @@ What else to expect:
 * The menu answers once the browser has taken the request, or after 15 seconds at
   most. A browser too busy to confirm by then is left alone (started from a terminal,
   the launched browser would wait 20 seconds and then end the running one to take its
-  place), and the menu says it did not confirm. The request has usually reached it all
-  the same, so the profile's window may still come forward once the browser catches up.
+  place), and the menu says the switch is *not confirmed yet*, not that it failed: the
+  request has usually reached the browser all the same, so the profile's window may
+  still come forward once the browser catches up.
 
 ## Note on `<native>` settings
 

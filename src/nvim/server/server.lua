@@ -1059,9 +1059,10 @@ local function open_profile(chan, req)
     -- outcome is then UNKNOWN, not a failure: the launcher writes its whole request
     -- before it waits for the answer, and the running browser carries it out once it is
     -- free again, so a reply saying the switch will not happen can be proved wrong by
-    -- the profile's window coming forward later.
+    -- the profile's window coming forward later. `pending` carries that to the menu,
+    -- which says it without calling it a failure.
     timer = vim.fn.timer_start(PROFILE_OPEN_TIMEOUT_MS, function()
-        finish({ error = 'the browser did not confirm it within '
+        finish({ pending = true, error = 'the browser did not confirm it within '
             .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds; it may still open the profile once it responds' })
         pcall(vim.fn.jobstop, job)
     end)

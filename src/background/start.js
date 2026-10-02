@@ -147,7 +147,8 @@ const NATIVE_OPEN_PROFILE_TIMEOUT = 20000;
 // Asks the native host one Profile.* command and calls `done` exactly once, with
 // {data} or {error, kind}. `kind` names the fix the menu points at: "host" when no host
 // can be reached, "update" for a server.lua from before the command existed -- which
-// answers it with no `res` at all.
+// answers it with no `res` at all -- and "pending" when the host could not tell whether
+// it worked: an outcome the menu must not call a failure.
 function askProfileHost(message, timeout, done) {
     let settled = false;
     const abandon = new AbortController();
@@ -175,7 +176,7 @@ function askProfileHost(message, timeout, done) {
             // the host threw, and `res` is its message
             finish({error: typeof res === "string" && res ? res : "the native host failed"});
         } else if (res && typeof res === "object" && res.error) {
-            finish({error: String(res.error)});
+            finish(res.pending === true ? {error: String(res.error), kind: "pending"} : {error: String(res.error)});
         } else if (res && typeof res === "object" && "data" in res) {
             finish({data: res.data});
         } else {

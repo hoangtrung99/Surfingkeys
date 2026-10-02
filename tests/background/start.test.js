@@ -2840,6 +2840,15 @@ describe('start', () => {
                 jest.useRealTimers();
             }
         });
+
+        // the request reached the browser before the host gave up waiting on it
+        it('marks a switch the host could not confirm as pending, not failed', async () => {
+            const said = 'the browser did not confirm it within 15 seconds; it may still open the profile once it responds';
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {pending: true, error: said}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'openProfile', profile: 'Default'});
+            expect(sendResponse).toHaveBeenCalledWith({error: said, kind: 'pending'});
+        });
     });
 
     describe('toolbar icon', () => {

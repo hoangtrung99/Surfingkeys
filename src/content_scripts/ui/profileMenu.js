@@ -138,6 +138,14 @@ export default function createProfileMenu(omnibar, front) {
                 front.hidePopup();
                 return;
             }
+            // The host gave up waiting on the browser, which had the request by then and
+            // may still carry it out: said as a failure, the profile's window coming
+            // forward a moment later would contradict it.
+            if (response && response.kind === 'pending') {
+                notice = {text: `${profile.name}: not confirmed yet — the browser may still open it.`};
+                drawNotice();
+                return;
+            }
             const error = (response && response.error) || 'no answer';
             notice = {text: `Could not open ${profile.name}: ${error}.`, error: true, kind: response && response.kind};
             drawNotice();
