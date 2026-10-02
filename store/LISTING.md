@@ -50,10 +50,10 @@ Control the browser from the keyboard: navigate pages, links and tabs with Vim-s
 | `tabs` | Switch, close, move, pin and mute tabs; list tabs in the omnibar, the palette and the tab switcher. |
 | `tabGroups` | Commands that act on tab groups (group, ungroup, move tabs into a group). |
 | `history` | Search browsing history from the omnibar and the command palette. |
-| `bookmarks` | Search, open and add bookmarks from the omnibar. |
+| `bookmarks` | Search, open and add bookmarks from the omnibar, and show the bookmarks bar on the extension's start page. |
 | `sessions` | Reopen recently closed tabs. |
 | `topSites` | Show most-visited sites on the start page and in the omnibar. |
-| `favicon` | Show each site's icon next to results in the omnibar, the palette and the tab switcher. |
+| `favicon` | Show each site's icon next to results in the omnibar, the palette and the tab switcher, and next to bookmarks and top sites on the start page. |
 | `storage` | Keep the user's settings, key mappings and theme. |
 | `scripting` | Inject the content script into tabs that were open before install and into frames. |
 | `userScripts` | Run the user's own settings script (custom key mappings) in pages, as the user writes it on the settings page; nothing runs unless the user turns on Allow User Scripts. |
@@ -61,7 +61,7 @@ Control the browser from the keyboard: navigate pages, links and tabs with Vim-s
 | `downloads`, `downloads.shelf` | Download a link or image on the user's key press, and show or hide the downloads bar. |
 | `tts` | Read the selected text aloud when the user asks. |
 | `proxy` | Optional proxy settings the user configures on the settings page. |
-| `nativeMessaging` | Talk to an optional helper the user installs on their own computer, which runs Neovim as the text editor and reads `~/.surfingkeys.js`. |
+| `nativeMessaging` | Talk to an optional helper the user installs on their own computer, which runs Neovim as the text editor, reads `~/.surfingkeys.js`, and switches browser profiles: when the user presses gP it lists the browser's profiles (their names and the email addresses of signed-in accounts, read from the browser's own Local State file) and opens the one picked by starting the browser. Nothing of it leaves the computer. |
 
 **Remote code**: No. All code is in the package; the user's own settings script runs through the `chrome.userScripts` API only after the user allows it.
 

@@ -10,9 +10,9 @@ import { getBrowserName } from '../common/utils.js';
 const README = 'https://github.com/hoangtrung99/Surfingkeys/blob/master/src/nvim/server/Readme.md#switching-profiles';
 const SERVER_LUA = 'https://github.com/hoangtrung99/Surfingkeys/blob/master/src/nvim/server/server.lua';
 
-// "jose" finds "José"
+// "jose" finds "José" and "duc" finds "Đức" (đ does not decompose)
 function fold(s) {
-    return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
 }
 
 export default function createProfileMenu(omnibar, front) {
@@ -66,6 +66,14 @@ export default function createProfileMenu(omnibar, front) {
         omnibar.resultsDiv.append(node);
     }
 
+    // The notice goes in above the rows as they stand, which are never listed again
+    // for it: listing them focuses the first one, so the row the user picked would no
+    // longer be the one focused, and Enter after a refusal would open another profile.
+    function drawNotice() {
+        omnibar.resultsDiv.querySelectorAll('.sk_profile_note').forEach((n) => n.remove());
+        notice && omnibar.resultsDiv.prepend(noteFor(notice.text, notice.error, notice.kind));
+    }
+
     // Rows carry the profile and no url or uid: listResults' click handler would open
     // a url, and Ctrl-d would delete a uid from history.
     function renderRow(profile) {
@@ -115,7 +123,11 @@ export default function createProfileMenu(omnibar, front) {
         opening = true;
         const mine = session;
         notice = {text: `Opening ${profile.name}…`};
-        render();
+        // a click picks a row without focusing it: the one picked is the one focused
+        omnibar.resultsDiv.querySelectorAll('li').forEach((li) => {
+            li.classList.toggle('focused', li.profileDir === profile.dir);
+        });
+        drawNotice();
         RUNTIME('openProfile', {profile: profile.dir}, function(response) {
             if (mine !== session) {
                 return;
@@ -128,7 +140,7 @@ export default function createProfileMenu(omnibar, front) {
             }
             const error = (response && response.error) || 'no answer';
             notice = {text: `Could not open ${profile.name}: ${error}.`, error: true, kind: response && response.kind};
-            render();
+            drawNotice();
         });
     }
 
@@ -174,10 +186,14 @@ export default function createProfileMenu(omnibar, front) {
     // Only ever OPENS the menu, with the name typed in: picking is left to Enter or a
     // click there. A command can be run by anything that can post to this frame, the
     // page included, and a switch raises another window over the one being used.
+    //
+    // The menu opens once the command line is done with, never from inside it: typed
+    // in the ":" omnibar, the command runs from its Enter, which empties the input
+    // after it -- by then the menu's, so the name typed in would be wiped.
     if (getBrowserName() === 'Chrome') {
         omnibar.command('profile', '#8Switch to another browser profile, or :profile work', function(args) {
             const name = args.join(' ').trim();
-            front._actions['openOmnibar'](name ? {type: 'Profiles', pref: name} : {type: 'Profiles'});
+            setTimeout(() => front._actions['openOmnibar'](name ? {type: 'Profiles', pref: name} : {type: 'Profiles'}), 0);
         });
     }
 

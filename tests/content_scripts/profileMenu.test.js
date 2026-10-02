@@ -100,9 +100,12 @@ describe('profile menu', () => {
     });
 
     test('filters by name, accents aside, by email and by directory', () => {
-        openWith({ profiles: PROFILES });
+        openWith({ profiles: PROFILES.concat([{ dir: 'Profile 5', name: 'Ngô Thị Đào', email: '' }]) });
         type('jose');
         expect(names()).toEqual(['José']);
+        // đ has no decomposition to drop an accent from
+        type('dao');
+        expect(names()).toEqual(['Ngô Thị Đào']);
         type('example.com');
         expect(names()).toEqual(['Work']);
         type('default');
@@ -128,6 +131,22 @@ describe('profile menu', () => {
         rows()[2].onclick();
         expect(opened()).toEqual([{ profile: 'Profile 3' }]);
         expect(omnibar.input.value).toBe('');
+    });
+
+    // Listing the rows again focuses the first: Enter would then open another profile.
+    test('the row clicked is the one focused, while it opens and after a refusal', () => {
+        openWith({ profiles: PROFILES });
+        const focusedName = () => omnibar.resultsDiv.querySelector('li.focused .title').textContent;
+        rows()[2].onclick();
+        expect(note()).toBe('Opening José…');
+        expect(focusedName()).toBe('José');
+        expect(omnibar.resultsDiv.querySelectorAll('li.focused')).toHaveLength(1);
+        answer('openProfile', { error: 'the browser refused it, its profile being in use or locked (exit code 21)' });
+        expect(note()).toBe('Could not open José: the browser refused it, its profile being in use or locked (exit code 21).');
+        expect(omnibar.resultsDiv.querySelectorAll('.sk_profile_note')).toHaveLength(1);
+        expect(focusedName()).toBe('José');
+        menu.onEnter();
+        expect(opened()).toEqual([{ profile: 'Profile 3' }, { profile: 'Profile 3' }]);
     });
 
     test('one switch at a time', () => {
@@ -200,12 +219,21 @@ describe('profile menu', () => {
         expect(menu.onEnter()).toBe(false);
     });
 
+    // once the ":" omnibar's Enter is done with its input (profileMenuFrontend.test.js)
     test(':profile opens the menu, with a name typed in, and never switches by itself', () => {
-        commands.profile([]);
-        expect(front._actions.openOmnibar).toHaveBeenLastCalledWith({ type: 'Profiles' });
-        commands.profile(['work', 'stuff']);
-        expect(front._actions.openOmnibar).toHaveBeenLastCalledWith({ type: 'Profiles', pref: 'work stuff' });
-        expect(opened()).toEqual([]);
+        jest.useFakeTimers();
+        try {
+            commands.profile([]);
+            expect(front._actions.openOmnibar).not.toHaveBeenCalled();
+            jest.runOnlyPendingTimers();
+            expect(front._actions.openOmnibar).toHaveBeenLastCalledWith({ type: 'Profiles' });
+            commands.profile(['work', 'stuff']);
+            jest.runOnlyPendingTimers();
+            expect(front._actions.openOmnibar).toHaveBeenLastCalledWith({ type: 'Profiles', pref: 'work stuff' });
+            expect(opened()).toEqual([]);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     test(':profile exists in Chromium only', () => {

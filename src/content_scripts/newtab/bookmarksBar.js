@@ -264,7 +264,17 @@ export function createBookmarksBar(nav, {say} = {}) {
         }
         if (el.tagName === 'BUTTON') {
             // Enter or Space: the keyboard is on the button, and goes into the menu
-            toggle(el, e.isTrusted && e.detail === 0);
+            const keyboard = e.isTrusted && e.detail === 0;
+            const depth = depthOf(el);
+            if (depth > 0 && !keyboard) {
+                // A click on a folder in a menu only ever opens its submenu, as in
+                // Chrome's menus: resting on the folder on the way to click it has
+                // usually opened it already, and a click that closed it again would
+                // close what the user is opening.
+                open[depth] && open[depth].button === el || openMenu(el, depth, false);
+            } else {
+                toggle(el, keyboard);
+            }
         } else if (el.getAttribute('aria-disabled') !== 'true') {
             // after the click is done with: links.js may still need the link in the page
             setTimeout(closeAll, 0);
@@ -297,8 +307,13 @@ export function createBookmarksBar(nav, {say} = {}) {
             }
         }, HOVER_MS);
     });
+    // Anywhere but an open menu or an entry closes the menus, the bar's empty
+    // stretch included: an entry is left to the click that follows, which toggles a
+    // folder's menu or follows a link.
     document.addEventListener('pointerdown', (e) => {
-        open.length && !nav.contains(e.target) && closeAll();
+        const inMenu = open.some((m) => m.list.contains(e.target));
+        const onEntry = nav.contains(e.target) && e.target.closest('.sk_bm');
+        open.length && !inMenu && !onEntry && closeAll();
     });
     document.addEventListener('focusin', (e) => {
         open.length && !nav.contains(e.target) && closeAll();
@@ -310,6 +325,10 @@ export function createBookmarksBar(nav, {say} = {}) {
         }
     });
     window.addEventListener('blur', closeAll);
+    // A page scroll closes the menus: they are position: fixed, so one left open stays
+    // put while the bar scrolls away, and floats over the page cut off from its folder.
+    // A menu's own scroll does not reach here: an element's scroll does not bubble.
+    window.addEventListener('scroll', closeAll);
     let fitFrame = null;
     window.addEventListener('resize', () => {
         closeAll();

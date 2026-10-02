@@ -526,17 +526,19 @@ end
 
 local uv = vim.loop
 
--- The browser's exit code when it handed its command line to the instance already
--- running (CHROME_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED). Success is NOT 0: a check
--- for 0 reports every switch that worked as a failure.
-local EXIT_PROCESS_NOTIFIED = 24
+-- The browser's exit codes when it handed its command line to the instance already
+-- running. Inside it that is CHROME_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED (24), but
+-- ChromeMain turns every "normal" code into 0 before the process exits, so 0 is what a
+-- hand-off that worked reports: a check for 24 alone reports every switch as a failure.
+-- 24 is kept for a build that does not remap it.
+local EXIT_HANDED_OVER = { [0] = true, [24] = true }
 -- PROFILE_IN_USE, which LOCK_ERROR shares: the running browser did not take it.
 local EXIT_PROFILE_IN_USE = 21
 -- The deadline must stay under the 20 seconds the launched browser waits for the
 -- running one to acknowledge: past those it kills the running browser and takes its
 -- place, as when started from a terminal. The launcher is stopped at the deadline, so a
--- browser too busy to answer is reported as such, never killed and replaced by a
--- switch the user only meant to bring a window forward.
+-- browser too busy to answer is reported as not having confirmed, never killed and
+-- replaced by a switch the user only meant to bring a window forward.
 local PROFILE_OPEN_TIMEOUT_MS = 15000
 
 -- Local State can hold an object with an empty key, which vim.fn.json_decode can only
@@ -723,6 +725,17 @@ local function lock_pid(dir)
     return tonumber(string.match(target, '%-(%d+)$'))
 end
 
+-- Whether <dir>/SingletonSocket leads to a socket. A directory is the browser's only
+-- when this holds as well as its lock naming the browser: a SingletonLock outlives a
+-- crash and its pid is reused, while the socket lives in a temporary folder that a
+-- reboot empties. Going by the lock alone, a stale one that happens to name the browser
+-- wins, and the host lists another browser's profiles and launches with that
+-- browser's directory, where nothing answers the launcher.
+local function holds_socket(dir)
+    local st = uv.fs_stat(dir .. '/SingletonSocket')
+    return type(st) == 'table' and st.type == 'socket'
+end
+
 local function subdirs(dir)
     local list = {}
     local handle = uv.fs_scandir(dir)
@@ -766,25 +779,38 @@ local function locate_browser(need_exe)
         argv = mac_argv(ppid)
     end
     local named = argv and udd_from_argv(argv, cwd) or {}
-    local root
+    local roots = {}
     if system == 'linux' then
         -- read by Chromium on Linux only, and passed on to its children
         local env_dir = os.getenv('CHROME_USER_DATA_DIR')
         if env_dir and string.sub(env_dir, 1, 1) == '/' then
             named[#named + 1] = env_dir
         end
+        -- Chromium puts its default directory under $CHROME_CONFIG_HOME when that is
+        -- set, ahead of $XDG_CONFIG_HOME: a browser using it is found only there.
+        local chrome_config = os.getenv('CHROME_CONFIG_HOME')
+        if chrome_config and string.sub(chrome_config, 1, 1) == '/' then
+            roots[#roots + 1] = chrome_config
+        end
         local xdg = os.getenv('XDG_CONFIG_HOME')
-        root = (xdg and xdg ~= '') and xdg or (home_dir .. '/.config')
+        roots[#roots + 1] = (xdg and xdg ~= '') and xdg or (home_dir .. '/.config')
     else
-        root = home_dir .. '/Library/Application Support'
+        roots[1] = home_dir .. '/Library/Application Support'
     end
 
     -- Looked through in stages, nearest first, and the first stage holding a match
     -- decides: the command line names the directory outright, and the default places
-    -- sit one level (Chromium, Helium) or two (Google/Chrome) below the root.
+    -- sit one level (Chromium, Helium) or two (Google/Chrome) below a root.
     local top = nil
     local function top_dirs()
-        top = top or subdirs(root)
+        if top == nil then
+            top = {}
+            for _, root in ipairs(roots) do
+                for _, dir in ipairs(subdirs(root)) do
+                    top[#top + 1] = dir
+                end
+            end
+        end
         return top
     end
     local stages = {
@@ -804,7 +830,7 @@ local function locate_browser(need_exe)
     for _, stage in ipairs(stages) do
         local matches, seen = {}, {}
         for _, dir in ipairs(stage()) do
-            if lock_pid(dir) == ppid then
+            if lock_pid(dir) == ppid and holds_socket(dir) then
                 local real = realpath(dir)
                 if not seen[real] then
                     seen[real] = true
@@ -822,7 +848,7 @@ local function locate_browser(need_exe)
     end
     if udd == nil then
         return nil, 'found no browser data directory whose SingletonLock names process ' .. ppid
-            .. ', the one that started this host: start.sh must start nvim with exec'
+            .. ', the one that started this host, with its SingletonSocket in place: start.sh must start nvim with exec'
     end
 
     local exe
@@ -1011,7 +1037,7 @@ local function open_profile(chan, req)
         on_stdout = collect,
         on_stderr = collect,
         on_exit = function(_, code)
-            if code == EXIT_PROCESS_NOTIFIED then
+            if EXIT_HANDED_OVER[code] then
                 finish({ data = { dir = dir } })
                 return
             end
@@ -1029,10 +1055,14 @@ local function open_profile(chan, req)
         return { error = 'could not start ' .. browser.exe }
     end
     -- At the deadline the launcher is still waiting on the running browser; see
-    -- PROFILE_OPEN_TIMEOUT_MS for why it is stopped rather than left to finish.
+    -- PROFILE_OPEN_TIMEOUT_MS for why it is stopped rather than left to finish. The
+    -- outcome is then UNKNOWN, not a failure: the launcher writes its whole request
+    -- before it waits for the answer, and the running browser carries it out once it is
+    -- free again, so a reply saying the switch will not happen can be proved wrong by
+    -- the profile's window coming forward later.
     timer = vim.fn.timer_start(PROFILE_OPEN_TIMEOUT_MS, function()
-        finish({ error = 'the browser did not take the request within '
-            .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds, so it was abandoned' })
+        finish({ error = 'the browser did not confirm it within '
+            .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds; it may still open the profile once it responds' })
         pcall(vim.fn.jobstop, job)
     end)
     return DEFERRED

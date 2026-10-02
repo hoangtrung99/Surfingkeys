@@ -4,7 +4,7 @@
 
 ## About this fork
 
-This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page and a quick-controls popup. Everything else is upstream Surfingkeys.
+This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, and switching browser profiles with <kbd>gP</kbd>. Everything else is upstream Surfingkeys.
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
@@ -44,7 +44,7 @@ A start page (Chromium builds) with your bookmarks bar and your top sites, in th
 
 Surfingkeys does not take over the new tab page by itself. In **Helium**:
 
-1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`. That ID is the release `.zip`'s; installed from the Chrome Web Store, Surfingkeys has another one, shown under its name in `helium://extensions`.
+1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`. That ID is the release `.zip`'s. This fork's Chrome Web Store build, *Surfingkeys Palette*, has another one, shown under its name in `helium://extensions`. Upstream's Surfingkeys, the store listing under [Installation](#installation), has neither this page nor <kbd>gP</kbd>.
 2. Relaunch Helium.
 3. No prompt about your new tab page is expected. Should one appear, click nothing in it: its *Change it back* turns off all of Surfingkeys, not only this page.
 

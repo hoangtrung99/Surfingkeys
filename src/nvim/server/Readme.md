@@ -167,10 +167,11 @@ It needs:
   opens there.
 
 The host refuses rather than guesses. It uses a data directory only when the
-`SingletonLock` in it names the browser that started the host, and it opens only
-profiles that `Local State` lists. A wrong directory would start a second, separate
-browser instead of reaching the running one, and a profile name the browser does not
-have would create a new, empty profile. The menu says why when it refuses.
+`SingletonLock` in it names the browser that started the host and its
+`SingletonSocket` is in place, and it opens only profiles that `Local State` lists. A
+wrong directory would start a second, separate browser instead of reaching the running
+one, and a profile name the browser does not have would create a new, empty profile.
+The menu says why when it refuses.
 
 What else to expect:
 
@@ -185,9 +186,10 @@ What else to expect:
   cannot tell which one asked. Picking the profile you are in just opens the start
   page in a new tab.
 * The menu answers once the browser has taken the request, or after 15 seconds at
-  most. A browser too busy to take it by then is left alone and the switch is
-  reported as failed: started from a terminal, the launched browser would wait 20
-  seconds and then end the running one to take its place.
+  most. A browser too busy to confirm by then is left alone (started from a terminal,
+  the launched browser would wait 20 seconds and then end the running one to take its
+  place), and the menu says it did not confirm. The request has usually reached it all
+  the same, so the profile's window may still come forward once the browser catches up.
 
 ## Note on `<native>` settings
 

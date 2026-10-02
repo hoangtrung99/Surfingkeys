@@ -23,9 +23,27 @@ export function howToOpen(e) {
     return {newTab, active: newTab && !!e.shiftKey, newWindow: !newTab && !!e.shiftKey};
 }
 
-// Opens `url` through chrome.tabs: in this page's own tab, or a new one next to
-// it. `say(text)` is told when the browser refuses (a file:// URL without
-// "Allow access to file URLs", for one), since nothing else would show it.
+// Where the browser puts a link `tab` opens in a new tab: after the tabs it opened
+// before, the one right next to it when there are none. A new tab must not simply go
+// right next to it: each would land in front of the ones opened before it, so a row of
+// Ctrl-clicks opens in reverse, and ahead of the web links the browser placed itself.
+function afterOpened(tab, then) {
+    chrome.tabs.query({windowId: tab.windowId}, (tabs) => {
+        let index = tab.index + 1;
+        if (!chrome.runtime.lastError && Array.isArray(tabs)) {
+            tabs.forEach((t) => {
+                if (t.openerTabId === tab.id && t.index >= index) {
+                    index = t.index + 1;
+                }
+            });
+        }
+        then(index);
+    });
+}
+
+// Opens `url` through chrome.tabs: in this page's own tab, or a new one beside it.
+// `say(text)` is told when the browser refuses (a file:// URL without "Allow access
+// to file URLs", for one), since nothing else would show it.
 export function openThroughTabs(url, how, say) {
     const done = () => {
         const error = chrome.runtime.lastError;
@@ -36,9 +54,10 @@ export function openThroughTabs(url, how, say) {
         return;
     }
     chrome.tabs.getCurrent((tab) => {
-        if (how.newTab) {
-            chrome.tabs.create(tab ? {url, active: how.active, index: tab.index + 1, openerTabId: tab.id}
-                : {url, active: how.active}, done);
+        if (how.newTab && tab) {
+            afterOpened(tab, (index) => chrome.tabs.create({url, active: how.active, index, openerTabId: tab.id}, done));
+        } else if (how.newTab) {
+            chrome.tabs.create({url, active: how.active}, done);
         } else if (tab) {
             chrome.tabs.update(tab.id, {url}, done);
         } else {

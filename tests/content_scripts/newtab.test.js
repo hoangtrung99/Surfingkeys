@@ -51,7 +51,7 @@ function trackListeners() {
 
 const bgOf = (id) => PALETTES[id].surface || PALETTES[id].bg;
 
-function setup({tree = TREE, sites = [], storage = {}, cache, answerStorage = true} = {}) {
+function setup({tree = TREE, sites = [], storage = {}, cache, answerStorage = true, tabs = [{id: 5, index: 2, windowId: 1}]} = {}) {
     trackListeners();
     const local = Object.assign({}, storage);
     let currentTree = tree;
@@ -87,7 +87,8 @@ function setup({tree = TREE, sites = [], storage = {}, cache, answerStorage = tr
         },
         topSites: {get: jest.fn((cb) => cb(sites))},
         tabs: {
-            getCurrent: jest.fn((cb) => cb({id: 5, index: 2})),
+            getCurrent: jest.fn((cb) => cb({id: 5, index: 2, windowId: 1})),
+            query: jest.fn((query, cb) => cb(tabs.filter((t) => t.windowId === query.windowId))),
             update: jest.fn((...args) => args.find((a) => typeof a === 'function')()),
             create: jest.fn((props, cb) => cb && cb()),
         },
@@ -278,7 +279,26 @@ describe('bookmarks bar', () => {
         expect($$('.sk_menu')).toHaveLength(0);
     });
 
-    test('a click outside the bar closes every menu, one inside it does not', () => {
+    // resting on it on the way to the click has opened it already
+    test('a click on a folder in a menu opens its submenu, and never closes it', () => {
+        jest.useFakeTimers();
+        const {$$} = setup();
+        click(button($$, 'Work'));
+        button($$, 'Deeper').dispatchEvent(new Event('pointerover', {bubbles: true}));
+        jest.advanceTimersByTime(250);
+        expect($$('.sk_menu')).toHaveLength(2);
+        click(button($$, 'Deeper'));
+        expect($$('.sk_menu').map(ownEntries)).toEqual([['Docs', 'Deeper', 'Nothing'], ['Deep', 'Deepest']]);
+        click(button($$, 'Deeper'));
+        expect($$('.sk_menu')).toHaveLength(2);
+        expect(button($$, 'Deeper').getAttribute('aria-expanded')).toBe('true');
+        // a submenu below it stays open too
+        click(button($$, 'Deepest'));
+        click(button($$, 'Deeper'));
+        expect($$('.sk_menu')).toHaveLength(3);
+    });
+
+    test('a click outside the menus and the entries closes every menu, one inside a menu does not', () => {
         const {$$, $} = setup();
         click(button($$, 'Work'));
         click(button($$, 'Deeper'));
@@ -286,6 +306,31 @@ describe('bookmarks bar', () => {
         expect($$('.sk_menu')).toHaveLength(2);
         $('#content').dispatchEvent(new Event('pointerdown', {bubbles: true}));
         expect($$('.sk_menu')).toHaveLength(0);
+    });
+
+    test('a click on the bar\'s empty stretch closes every menu, one on its entries is left to the click', () => {
+        const {$$, $} = setup();
+        click(button($$, 'Work'));
+        button($$, 'Work').dispatchEvent(new Event('pointerdown', {bubbles: true}));
+        link($$, 'Local one').dispatchEvent(new Event('pointerdown', {bubbles: true}));
+        expect($$('.sk_menu')).toHaveLength(1);
+        $('#sk_bar_items').dispatchEvent(new Event('pointerdown', {bubbles: true}));
+        expect($$('.sk_menu')).toHaveLength(0);
+        click(button($$, 'Work'));
+        $('#sk_bar').dispatchEvent(new Event('pointerdown', {bubbles: true}));
+        expect($$('.sk_menu')).toHaveLength(0);
+    });
+
+    test('scrolling the page closes every menu; scrolling a menu closes only its submenus', () => {
+        const {$$} = setup();
+        click(button($$, 'Work'));
+        click(button($$, 'Deeper'));
+        $$('.sk_menu')[0].dispatchEvent(new Event('scroll'));
+        expect($$('.sk_menu')).toHaveLength(1);
+        // the document's scroll event bubbles to the window
+        document.dispatchEvent(new Event('scroll', {bubbles: true}));
+        expect($$('.sk_menu')).toHaveLength(0);
+        expect(button($$, 'Work').getAttribute('aria-expanded')).toBe('false');
     });
 
     test('menu entries are links and buttons, so link hints reach them', () => {
@@ -339,6 +384,23 @@ describe('bookmarks bar', () => {
         watch.done();
         expect(watch.seen).toEqual([true, true, true, true, true]);
         expect(chrome.tabs.update).toHaveBeenCalledTimes(1);
+    });
+
+    // as the browser places the web links it opens from the page
+    test('puts a new tab after the ones the page opened before, so a row of them keeps its order', () => {
+        const tabs = [
+            {id: 4, index: 1, windowId: 1, openerTabId: 5},  // before the page: not after it
+            {id: 5, index: 2, windowId: 1},
+            {id: 6, index: 3, windowId: 1, openerTabId: 5},
+            {id: 7, index: 4, windowId: 1, openerTabId: 5},
+            {id: 8, index: 5, windowId: 1},
+            {id: 9, index: 0, windowId: 2, openerTabId: 5},
+        ];
+        const {$$} = setup({tabs});
+        click(link($$, 'Settings'), {ctrlKey: true});
+        expect(chrome.tabs.query).toHaveBeenCalledWith({windowId: 1}, expect.any(Function));
+        expect(chrome.tabs.create).toHaveBeenLastCalledWith(
+            {url: 'chrome://settings/', active: false, index: 5, openerTabId: 5}, expect.any(Function));
     });
 
     test('says so when the browser will not open one', () => {
