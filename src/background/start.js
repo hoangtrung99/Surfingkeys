@@ -140,9 +140,9 @@ function readNativeSettings(onReady, onException) {
 // the browser itself with --profile-directory (see its Profile.open).
 const NATIVE_PROFILES_TIMEOUT = 5000;
 // server.lua answers Profile.open once the browser it started has exited, and gives
-// that 25 seconds. This deadline must outlast it: a shorter one reports "no answer"
+// that 15 seconds. This deadline must outlast it: a shorter one reports "no answer"
 // while the switch is still being decided, and may then happen anyway.
-const NATIVE_OPEN_PROFILE_TIMEOUT = 30000;
+const NATIVE_OPEN_PROFILE_TIMEOUT = 20000;
 
 // Asks the native host one Profile.* command and calls `done` exactly once, with
 // {data} or {error, kind}. `kind` names the fix the menu points at: "host" when no host

@@ -532,10 +532,12 @@ local uv = vim.loop
 local EXIT_PROCESS_NOTIFIED = 24
 -- PROFILE_IN_USE, which LOCK_ERROR shares: the running browser did not take it.
 local EXIT_PROFILE_IN_USE = 21
--- The launched browser waits up to 20 seconds for the running one to acknowledge, so
--- the deadline sits past that: an earlier one reports "no answer" while the outcome is
--- still being decided.
-local PROFILE_OPEN_TIMEOUT_MS = 25000
+-- The deadline must stay under the 20 seconds the launched browser waits for the
+-- running one to acknowledge: past those it kills the running browser and takes its
+-- place, as when started from a terminal. The launcher is stopped at the deadline, so a
+-- browser too busy to answer is reported as such, never killed and replaced by a
+-- switch the user only meant to bring a window forward.
+local PROFILE_OPEN_TIMEOUT_MS = 15000
 
 -- Local State can hold an object with an empty key, which vim.fn.json_decode can only
 -- return as a special _TYPE/_VAL table; vim.json, where this nvim has it, reads it as
@@ -1000,10 +1002,9 @@ local function open_profile(chan, req)
         '--profile-directory=' .. dir,
         url,
     }, {
-        -- It may outlive this host: when the running browser has gone, or does not
-        -- answer, the launched one takes its place -- and this host, whose parent was
-        -- that browser, exits, which would kill a job that is not detached.
-        detach = true,
+        -- Not detached: the launcher must die with this host. The host exits when the
+        -- browser that started it has gone, and a launcher outliving it would find no
+        -- browser to hand over to and start one the user never asked for.
         stdin = 'null',
         stdout_buffered = true,
         stderr_buffered = true,
@@ -1027,11 +1028,12 @@ local function open_profile(chan, req)
     if not ok or type(job) ~= 'number' or job <= 0 then
         return { error = 'could not start ' .. browser.exe }
     end
-    -- Past the deadline the launched browser is left running: still running means it
-    -- is waiting on the browser or has become one, and stopping either is not ours.
+    -- At the deadline the launcher is still waiting on the running browser; see
+    -- PROFILE_OPEN_TIMEOUT_MS for why it is stopped rather than left to finish.
     timer = vim.fn.timer_start(PROFILE_OPEN_TIMEOUT_MS, function()
-        finish({ error = 'the browser did not report back within '
-            .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds' })
+        finish({ error = 'the browser did not take the request within '
+            .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds, so it was abandoned' })
+        pcall(vim.fn.jobstop, job)
     end)
     return DEFERRED
 end

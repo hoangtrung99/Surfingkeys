@@ -184,9 +184,10 @@ What else to expect:
 * No profile is marked as the current one: the host is shared by every profile and
   cannot tell which one asked. Picking the profile you are in just opens the start
   page in a new tab.
-* The menu answers once the browser has taken the request, or after 25 seconds at
-  most: the browser waits up to 20 for the running instance to respond (and then, as
-  when started from a terminal, ends that instance and takes its place).
+* The menu answers once the browser has taken the request, or after 15 seconds at
+  most. A browser too busy to take it by then is left alone and the switch is
+  reported as failed: started from a terminal, the launched browser would wait 20
+  seconds and then end the running one to take its place.
 
 ## Note on `<native>` settings
 

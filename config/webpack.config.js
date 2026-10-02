@@ -146,10 +146,10 @@ module.exports = (env, argv) => {
     // adapter passes an nvimServer -- which is Chrome and Firefox, but not Safari,
     // whose native host is the app and runs no neovim.
     if (browser === "chrome") {
-        // The new tab page (README: "New tab page") is for the unpacked Chromium
-        // builds only: the store package stays as listed, and the browser flag
-        // that turns the page on names the unpacked builds' extension ID.
-        pagesCopyOptions.ignore = STORE ? ['**/newtab.*'] : [];
+        // The new tab page ships in every Chromium build, the store's included:
+        // gP opens it in the profile it switches to, and a build without it opens
+        // a file-not-found tab there. Nothing in the manifest points at it.
+        pagesCopyOptions.ignore = [];
     } else if (browser === "firefox") {
         pagesCopyOptions.ignore = pagesCopyOptions.ignore.filter((p) => p !== '**/neovim.*');
     }
@@ -159,9 +159,7 @@ module.exports = (env, argv) => {
     }
     if (browser === "chrome") {
         moduleEntries['api'] = './src/user_scripts/index.js';
-        if (!STORE) {
-            entry['pages/newtab'] = './src/content_scripts/newtab.js';
-        }
+        entry['pages/newtab'] = './src/content_scripts/newtab.js';
         const chromeOnlyCopyPatterns = [
             { from: 'node_modules/pdfjs-dist/cmaps', to: 'pages/cmaps' },
             { from: 'node_modules/pdfjs-dist/build/pdf.min.mjs', to: 'pages' },

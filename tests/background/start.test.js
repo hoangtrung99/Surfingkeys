@@ -2823,19 +2823,19 @@ describe('start', () => {
             expect(request).not.toHaveBeenCalled();
         });
 
-        // server.lua waits up to 25 seconds for the browser it started, which itself
-        // waits up to 20 for the running one: a switch still being decided is not "no answer".
-        it('waits out the host for a switch, and gives up after 30 seconds', async () => {
+        // server.lua waits up to 15 seconds for the browser it started: a switch still
+        // being decided is not "no answer".
+        it('waits out the host for a switch, and gives up after 20 seconds', async () => {
             jest.useFakeTimers();
             try {
                 const request = jest.fn(() => new Promise(() => {}));
                 const {dispatch} = bootstrap(withHost(request));
                 const {sendResponse} = dispatch({action: 'openProfile', profile: 'Default', needResponse: true},
                     senderFor(12));
-                jest.advanceTimersByTime(29999);
+                jest.advanceTimersByTime(19999);
                 expect(sendResponse).not.toHaveBeenCalled();
                 jest.advanceTimersByTime(1);
-                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 30 seconds'});
+                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 20 seconds'});
             } finally {
                 jest.useRealTimers();
             }

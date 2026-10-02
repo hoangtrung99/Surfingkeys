@@ -44,7 +44,7 @@ A start page (Chromium builds) with your bookmarks bar and your top sites, in th
 
 Surfingkeys does not take over the new tab page by itself. In **Helium**:
 
-1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`.
+1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`. That ID is the release `.zip`'s; installed from the Chrome Web Store, Surfingkeys has another one, shown under its name in `helium://extensions`.
 2. Relaunch Helium.
 3. No prompt about your new tab page is expected. Should one appear, click nothing in it: its *Change it back* turns off all of Surfingkeys, not only this page.
 
