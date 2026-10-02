@@ -1101,6 +1101,13 @@ local IDENTIFY_ATTEMPTS = 8
 local IDENTIFY_INTERVAL_MS = 250
 -- When a scan found nothing, the extension is asked for a new token at most this often.
 local REIDENTIFY_GAP_MS = 30000
+-- How often a host checks that the others can still reach it, and listens anew when they
+-- cannot: its socket removed (with the folder, or by a cleaner of temporary files) or
+-- never made (the folder was refused, and has been fixed since). Otherwise only this
+-- profile's own requests check it -- its extension connecting, its palette opening -- so
+-- a profile whose palette is never opened would stay out of every other palette until
+-- the browser restarts.
+local PEER_RELISTEN_INTERVAL_MS = 30000
 -- A request from another host is one short line. Past this it is not one.
 local PEER_REQUEST_MAX = 65536
 -- Or a reply of one: a profile with thousands of tabs comes to a few megabytes.
@@ -1133,13 +1140,15 @@ local peer = {
 local extension_waiting = {}
 local next_extension_request = 1
 
--- Sends `message` to the extension and calls `done(res)` once, with what it answered
--- or {error}. Only for an extension that has identified itself (peer.answering).
+-- Sends `message` to the extension and calls `done(res, timed_out)` once, with what it
+-- answered or {error}; `timed_out` when that is because the extension had the message
+-- but did not answer within `timeout_ms`. Only for an extension that has identified
+-- itself (peer.answering).
 local function ask_extension(message, timeout_ms, done)
     local n = next_extension_request
     next_extension_request = n + 1
     local timer = nil
-    local function finish(res)
+    local function finish(res, timed_out)
         if extension_waiting[n] == nil then
             return
         end
@@ -1147,7 +1156,7 @@ local function ask_extension(message, timeout_ms, done)
         if timer ~= nil then
             pcall(vim.fn.timer_stop, timer)
         end
-        done(res)
+        done(res, timed_out == true)
     end
     extension_waiting[n] = finish
     message.peer = n
@@ -1159,7 +1168,7 @@ local function ask_extension(message, timeout_ms, done)
     end
     logw("stdout: " .. text .. "\n")
     timer = vim.fn.timer_start(timeout_ms, function()
-        finish({ error = 'Surfingkeys in that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds' })
+        finish({ error = 'Surfingkeys in that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds' }, true)
     end)
 end
 
@@ -1200,16 +1209,28 @@ local function peer_dir_for(udd)
 end
 
 local serve_peer
+local reidentify
 
--- Listens for the other hosts of this browser, if not already. Returns true, or nil and
--- why not.
+-- Listens for the other hosts of this browser, unless it does already through a socket
+-- that is still in place. Returns true, or nil, why not, and whether that is because
+-- there is no browser data directory to meet for.
 local function peer_listen()
     if peer.server ~= nil then
-        return true
+        -- The socket FILE is what the others find this host by, and listening goes on
+        -- after it is removed: taking "listening" for "reachable" leaves a host whose
+        -- socket was removed out of every other palette for good.
+        if peer.path ~= nil and uv.fs_stat(peer.path) ~= nil then
+            return true
+        end
+        -- Closed BEFORE the next one is bound: closing a socket removes the name it was
+        -- bound under, the temporary name below, which the next one is bound under too.
+        -- Closed after, it takes the new socket's name away before the rename.
+        peer.server:close()
+        peer.server, peer.path = nil, nil
     end
     local browser, err = locate_browser(false)
     if browser == nil then
-        return nil, err
+        return nil, err, true
     end
     local dir, derr = peer_dir_for(browser.udd)
     if dir == nil then
@@ -1250,11 +1271,45 @@ local function peer_listen()
         return nil, 'could not listen on ' .. path .. ': ' .. tostring(lerr)
     end
     peer.server, peer.dir, peer.path, peer.udd = server, dir, path, browser.udd
+    -- Reachable only from now, so possibly never named: identify gives up on a host that
+    -- cannot listen, and the extension identified itself once, when it connected.
+    reidentify()
     return true
 end
 
--- Removes this host's socket, so the others do not try it once the host is gone.
+-- The timer that runs keep_listening, while the host runs.
+local relisten_timer = nil
+-- Why the host last failed to listen, or nil while it listens: logged when it changes,
+-- not every PEER_RELISTEN_INTERVAL_MS.
+local listen_failure = nil
+
+-- Listens, or tries to, and logs a change.
+local function keep_listening()
+    local ok, listening, err, no_browser = pcall(peer_listen)
+    local why = nil
+    if not (ok and listening) then
+        why = tostring(ok and err or listening)
+    end
+    if why ~= listen_failure then
+        logw(why and ("not listening for other profiles: " .. why .. "\n") or "listening for other profiles\n")
+        listen_failure = why
+    end
+    -- The timer stops once no browser data directory is found -- Firefox, Windows, a
+    -- start.sh that does not exec: no later try finds one, and each searches the user's
+    -- folders of application data again.
+    if ok and no_browser and relisten_timer ~= nil then
+        pcall(vim.fn.timer_stop, relisten_timer)
+        relisten_timer = nil
+    end
+end
+
+-- Removes this host's socket, so the others do not try it once the host is gone, and
+-- stops keep_listening making another.
 function surfingkeys_peer_close()
+    if relisten_timer ~= nil then
+        pcall(vim.fn.timer_stop, relisten_timer)
+        relisten_timer = nil
+    end
     if peer.path ~= nil then
         uv.fs_unlink(peer.path)
         peer.path = nil
@@ -1275,10 +1330,30 @@ local function own_profile()
     return { dir = entry.dir, name = entry.name }
 end
 
+-- A LevelDB .log is a run of 32 KiB blocks. A record that does not fit in what is left
+-- of a block goes on in the next one, after a 7-byte header of its own (checksum,
+-- length, type), so a token written across a block boundary is in the file with that
+-- header in the middle of it.
+local LEVELDB_LOG_BLOCK = 32768
+local LEVELDB_LOG_HEADER = 7
+
+-- The bytes of a LevelDB .log with the header at the start of every block but the first
+-- taken out: the records' bytes, joined across the block boundaries. The headers of the
+-- records within a block stay, and only ever stand BETWEEN two records.
+local function joined_log(content)
+    local parts = { string.sub(content, 1, LEVELDB_LOG_BLOCK) }
+    for start = LEVELDB_LOG_BLOCK + 1, #content, LEVELDB_LOG_BLOCK do
+        parts[#parts + 1] = string.sub(content, start + LEVELDB_LOG_HEADER, start + LEVELDB_LOG_BLOCK - 1)
+    end
+    return table.concat(parts)
+end
+
 -- The profile directories of `udd` whose storage for extension `extension_id` holds
 -- `token`. The browser keeps an extension's chrome.storage.local in
 -- <profile>/Local Extension Settings/<id>/, a LevelDB that appends each write to its
--- .log file at once (and keeps it in an .ldb file once compacted).
+-- .log file at once (and keeps it in an .ldb file once compacted). A .log is searched
+-- joined as well as raw: searched raw only, a token cut by a block boundary is missed,
+-- and the other profiles' palettes list this one's tabs under "another profile".
 local function find_token(udd, extension_id, token)
     local found = {}
     for _, dir in ipairs(subdirs(udd)) do
@@ -1290,9 +1365,11 @@ local function find_token(udd, extension_id, token)
             if name == nil then
                 break
             end
-            if kind == 'file' and (string.match(name, '%.log$') or string.match(name, '%.ldb$')) then
+            local is_log = string.match(name, '%.log$') ~= nil
+            if kind == 'file' and (is_log or string.match(name, '%.ldb$')) then
                 local content = read_file(store .. '/' .. name)
-                hit = content ~= nil and string.find(content, token, 1, true) ~= nil
+                hit = content ~= nil and (string.find(content, token, 1, true) ~= nil
+                    or (is_log and #content > LEVELDB_LOG_BLOCK and string.find(joined_log(content), token, 1, true) ~= nil))
             end
         end
         if hit then
@@ -1316,14 +1393,17 @@ local function identify(chan, req)
         return { error = 'Profile.identify needs the extension id' }
     end
     peer.answering = true
-    local ok, err = peer_listen()
-    if not ok then
-        return { error = err }
-    end
     if peer.identifying then
         return { error = 'already looking for a token' }
     end
+    -- set first: peer_listen asks the extension for a token when it starts listening,
+    -- and the extension is already sending this one
     peer.identifying = true
+    local ok, err = peer_listen()
+    if not ok then
+        peer.identifying = false
+        return { error = err }
+    end
     local id = req['id']
     local attempt = 0
     local function look()
@@ -1349,10 +1429,11 @@ local function identify(chan, req)
     return DEFERRED
 end
 
--- After a scan that found nothing, asks the extension to identify itself again: the
--- next tab list then carries the profile's name. Not while a scan runs, and not often,
--- since each answer is a storage write.
-local function reidentify()
+-- While the profile is not known -- a scan found nothing, or none ran because the host
+-- could not listen -- asks the extension to identify itself again: the next tab list
+-- then carries the profile's name. Not while a scan runs, and not often, since each
+-- answer is a storage write.
+reidentify = function()
     if peer.profile_dir ~= nil or peer.identifying or not peer.answering then
         return
     end
@@ -1386,8 +1467,18 @@ local function answer_peer(line, respond)
             reply({ error = 'no tab was named' })
             return
         end
+        -- At the deadline the extension has the request, and carries it out once it gets
+        -- to it: a reply saying the switch failed is then proved wrong by the tab coming
+        -- forward. `pending` carries that to the palette, as open_profile's does to the
+        -- profile menu.
         ask_extension({ command = 'Tabs.activate', tabId = req['tabId'], windowId = req['windowId'] },
-            PEER_SERVE_TIMEOUT_MS, reply)
+            PEER_SERVE_TIMEOUT_MS, function(res, timed_out)
+                if timed_out then
+                    res = { pending = true, error = 'Surfingkeys in that profile did not confirm the switch within '
+                        .. (PEER_SERVE_TIMEOUT_MS / 1000) .. ' seconds; it may still make it once it responds' }
+                end
+                reply(res)
+            end)
     else
         reply({ error = 'unknown request ' .. tostring(req['command']) })
     end
@@ -1440,14 +1531,15 @@ serve_peer = function(client)
 end
 
 -- Sends `message` to the host listening at `path` and calls `done(answer)` once, in the
--- main loop, with its decoded answer -- or done(nil, why, gone), `gone` when no host
--- listens there any more.
+-- main loop, with its decoded answer -- or done(nil, why, gone, timed_out): `gone` when
+-- no host listens there any more, `timed_out` when that host was sent the message but
+-- did not answer within `timeout_ms`.
 local function ask_peer(path, message, timeout_ms, done)
     local line = vim.fn.json_encode(message) .. '\n'
     local pipe = uv.new_pipe(false)
     local timer = uv.new_timer()
-    local buffer, settled = '', false
-    local function finish(text, why, gone)
+    local buffer, settled, sent = '', false, false
+    local function finish(text, why, gone, timed_out)
         if settled then
             return
         end
@@ -1459,7 +1551,7 @@ local function ask_peer(path, message, timeout_ms, done)
         end
         vim.schedule(function()
             if text == nil then
-                done(nil, why, gone)
+                done(nil, why, gone, timed_out == true)
                 return
             end
             local decoded, answer = pcall(vim.fn.json_decode, text)
@@ -1471,7 +1563,7 @@ local function ask_peer(path, message, timeout_ms, done)
         end)
     end
     timer:start(timeout_ms, 0, function()
-        finish(nil, 'that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds', false)
+        finish(nil, 'that profile did not answer within ' .. (timeout_ms / 1000) .. ' seconds', false, sent)
     end)
     pipe:connect(path, function(err)
         if err then
@@ -1511,6 +1603,7 @@ local function ask_peer(path, message, timeout_ms, done)
             end
         end)
         pipe:write(line)
+        sent = true
     end)
 end
 
@@ -1642,7 +1735,9 @@ local function peers_tabs(chan, req)
 end
 
 -- Switches to tab `req.tabId` of the profile whose host is `req.peer`, and answers with
--- what that profile's Surfingkeys observed afterwards, or why it could not.
+-- what that profile's Surfingkeys observed afterwards, or why it could not -- `pending`
+-- when that host had the request and did not answer in time, as it may still carry it
+-- out once its own work lets it.
 local function peers_activate(chan, req)
     local pid = req['peer']
     if type(pid) ~= 'number' or pid <= 0 or pid ~= math.floor(pid) then
@@ -1661,10 +1756,11 @@ local function peers_activate(chan, req)
     end
     local id = req['id']
     ask_peer(path, { command = 'Tabs.activate', tabId = req['tabId'], windowId = req['windowId'] },
-        PEER_ACTIVATE_TIMEOUT_MS, function(answer, why)
+        PEER_ACTIVATE_TIMEOUT_MS, function(answer, why, gone, timed_out)
             local res = answer and answer['res']
             if answer == nil then
-                res = { error = why }
+                res = timed_out and { pending = true, error = why .. '; it may still switch to the tab once it responds' }
+                    or { error = why }
             elseif type(res) ~= 'table' then
                 res = { error = 'Surfingkeys in that profile gave no answer' }
             end
@@ -1828,15 +1924,14 @@ elseif vim.fn ~= nil then
         end
     })
     -- The other hosts of this browser find this one from the start, the palette in
-    -- another profile not waiting for this profile's first request. Scheduled, so the
-    -- search for the browser's data directory does not hold up the first reply.
+    -- another profile not waiting for this profile's first request, and again after
+    -- its socket was lost (see PEER_RELISTEN_INTERVAL_MS). Scheduled, so the search for
+    -- the browser's data directory does not hold up the first reply.
     vim.cmd('autocmd VimLeavePre * lua surfingkeys_peer_close()')
-    vim.schedule(function()
-        local ok, listening, err = pcall(peer_listen)
-        if not (ok and listening) then
-            logw("not listening for other profiles: " .. tostring(ok and err or listening) .. "\n")
-        end
-    end)
+    vim.schedule(keep_listening)
+    relisten_timer = vim.fn.timer_start(PEER_RELISTEN_INTERVAL_MS, function()
+        keep_listening()
+    end, { ['repeat'] = -1 })
 else
     vim.api.nvim_command('quit')
 end

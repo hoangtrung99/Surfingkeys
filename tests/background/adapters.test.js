@@ -1,5 +1,5 @@
-// The browser adapters start() is booted with (src/background/chrome.js and
-// firefox.js): where the settings come from when local and sync storage
+// The browser adapters start() is booted with (src/background/chrome.js, firefox.js
+// and safari.js): where the settings come from when local and sync storage
 // disagree, the PAC script the proxy settings turn into, and how history is
 // searched. start() itself is replaced, so loading an adapter only hands its
 // object over.
@@ -14,8 +14,9 @@ jest.mock('../../src/background/tabSwitcher.js', () => ({ __esModule: true, defa
 const { start } = require('../../src/background/start.js');
 require('../../src/background/chrome.js');
 require('../../src/background/firefox.js');
+require('../../src/background/safari.js');
 // taken now: the jest config clears mock calls before every test
-const [[chromeAdapter], [firefoxAdapter]] = start.mock.calls;
+const [[chromeAdapter], [firefoxAdapter], [safariAdapter]] = start.mock.calls;
 
 let chrome;
 beforeEach(() => {
@@ -201,6 +202,34 @@ describe('the Chrome adapter', () => {
             expect(chrome.history.search.mock.calls[0][0].maxResults).toBe(300);
             expect(cb).toHaveBeenCalledWith([]);
         });
+    });
+});
+
+// The token the background writes to local storage for the native host to find
+// (identifyToHost) is no setting: nothing removes a copy of it from sync storage.
+describe.each([
+    ['Chrome', () => chromeAdapter],
+    ['Safari', () => safariAdapter],
+])('the %s adapter and the identifying token', (name, adapter) => {
+    test('local saved later: the token is not copied into sync', () => {
+        // settings loaded from a URL leave nothing else to sync, as in the real case
+        Object.assign(chrome.storage.local.data, {
+            savedAt: 20, localPath: 'http://localhost/sk.js', snippets: 'mapkey()', _profileToken: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6',
+        });
+        load(adapter(), null);
+        expect(chrome.storage.sync.data).toEqual({});
+        Object.assign(chrome.storage.local.data, { theme: 'nord' });
+        load(adapter(), null);
+        expect(chrome.storage.sync.data).toEqual({ savedAt: 20, theme: 'nord' });
+        // and this profile's copy stays until identifyToHost removes it
+        expect(chrome.storage.local.data._profileToken).toBe('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6');
+    });
+
+    test('sync saved later: a token in sync storage is not copied into local', () => {
+        Object.assign(chrome.storage.local.data, { savedAt: 10, theme: 'old' });
+        Object.assign(chrome.storage.sync.data, { savedAt: 30, theme: 'nord', _profileToken: 'f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5' });
+        load(adapter(), ['theme']);
+        expect(chrome.storage.local.data).toEqual({ savedAt: 30, theme: 'nord' });
     });
 });
 

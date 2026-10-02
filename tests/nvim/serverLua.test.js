@@ -445,6 +445,47 @@ function storeToken(udd, profile, token, file = '000003.log') {
     ]));
 }
 
+// The same, but in a .log of more than one block, with the record holding the token cut
+// by the block boundary. LevelDB writes its .log in 32 KiB blocks, and a record that
+// does not fit in what is left of one goes on in the next after a 7-byte header of its
+// own (checksum, length, type), which ends up in the middle of the token.
+function storeSplitToken(udd, profile, token, file) {
+    const BLOCK = 32768;
+    const HEADER = 7;
+    const chunks = [];
+    let offset = 0;
+    const append = (payload) => {
+        let first = true;
+        do {
+            const fragment = payload.subarray(0, BLOCK - offset % BLOCK - HEADER);
+            payload = payload.subarray(fragment.length);
+            const header = Buffer.alloc(HEADER);
+            header.writeUInt16LE(fragment.length, 4);
+            // FULL, FIRST, MIDDLE, LAST
+            header[6] = first ? (payload.length ? 2 : 1) : (payload.length ? 3 : 4);
+            chunks.push(header, fragment);
+            offset += HEADER + fragment.length;
+            first = false;
+        } while (payload.length);
+    };
+    const record = Buffer.concat([
+        Buffer.from([1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 13]),
+        Buffer.from('_profileToken'),
+        Buffer.from([34]),
+        Buffer.from(`"${token}"`),
+    ]);
+    // earlier writes of the extension's storage, up to where half the token fits
+    const before = BLOCK - token.length / 2 - record.indexOf(token) - 2 * HEADER;
+    append(Buffer.alloc(before, 'x'));
+    append(record);
+    const log = Buffer.concat(chunks);
+    expect(log.includes(token)).toBe(false);
+    expect(log.subarray(BLOCK - token.length / 2, BLOCK).toString()).toBe(token.slice(0, token.length / 2));
+    const store = path.join(udd, profile, 'Local Extension Settings', EXTENSION_ID);
+    fs.mkdirSync(store, { recursive: true });
+    fs.writeFileSync(path.join(store, file), log);
+}
+
 const randomToken = () => require('crypto').randomBytes(16).toString('hex');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const TABS_B = [
@@ -481,7 +522,10 @@ function deadSocket(file) {
             if (request.command === 'Tabs.list' && !silent) {
                 b.answer(request, true, { data: { tabs: many || TABS_B } });
             } else if (request.command === 'Tabs.activate') {
-                b.answer(request, true, { data: { tabId: request.tabId, windowId: request.windowId, active: true, focused: true } });
+                // tab 8's switch is carried out after the host's 2.5 seconds
+                setTimeout(() => {
+                    b.answer(request, true, { data: { tabId: request.tabId, windowId: request.windowId, active: true, focused: true } });
+                }, request.tabId === 8 ? 2700 : 0);
             }
         };
         const tokenA = randomToken();
@@ -623,6 +667,38 @@ function deadSocket(file) {
         expect(asked.pop()).toEqual({ peer: expect.any(Number), command: 'Tabs.activate', tabId: 7, windowId: 3 });
     });
 
+    // The other profile had the request by then, and may still switch: said as a failure,
+    // that profile's window coming forward a moment later would contradict it.
+    test('a switch the other profile does not confirm within 2.5 seconds is pending, not failed', async () => {
+        const reply = await a.send({ command: 'Peers.activate', peer: b.proc.pid, tabId: 8, windowId: 3 });
+        expect(reply.res).toEqual({
+            pending: true,
+            error: 'Surfingkeys in that profile did not confirm the switch within 2.5 seconds; it may still make it once it responds',
+        });
+        // its late answer is dropped, and the next switch is answered as usual
+        await sleep(400);
+        const next = await a.send({ command: 'Peers.activate', peer: b.proc.pid, tabId: 7, windowId: 3 });
+        expect(next.res).toEqual({ data: { tabId: 7, windowId: 3, active: true, focused: true } });
+    }, 10000);
+
+    test('so is one whose host takes the request and does not answer within 3 seconds', async () => {
+        const mute = path.join(meet, '88888888.sock');
+        const held = [];
+        const hung = await listenOn(mute);
+        hung.on('connection', (sock) => held.push(sock));
+        try {
+            const reply = await a.send({ command: 'Peers.activate', peer: 88888888, tabId: 7, windowId: 3 });
+            expect(reply.res).toEqual({
+                pending: true,
+                error: 'that profile did not answer within 3 seconds; it may still switch to the tab once it responds',
+            });
+        } finally {
+            held.forEach((sock) => sock.destroy());
+            hung.close();
+            fs.rmSync(mute, { force: true });
+        }
+    }, 10000);
+
     test.each([
         ['a profile that is no longer open', { peer: 77777777, tabId: 7 }, 'that profile is no longer open'],
         ['a peer that is not a pid', { peer: '../../etc', tabId: 7 }, 'no profile was named'],
@@ -630,6 +706,22 @@ function deadSocket(file) {
     ])('Peers.activate refuses %s', async (name, args, said) => {
         const reply = await a.send(Object.assign({ command: 'Peers.activate' }, args));
         expect(reply.res).toEqual({ error: said });
+    });
+
+    // what a cleaner of temporary files does, or a user removing the folder
+    test('a host whose socket is gone makes it again when next asked, the folder too', async () => {
+        fs.rmSync(path.dirname(meet), { recursive: true });
+        const reply = await a.send({ command: 'Peers.tabs' });
+        expect(reply.res).toEqual({ data: { peers: [] } });
+        expect(fs.readdirSync(meet)).toEqual([`${a.proc.pid}.sock`]);
+        [meet, path.dirname(meet)].forEach((dir) => expect(fs.lstatSync(dir).mode & 0o777).toBe(0o700));
+        // a switch needs the socket too
+        await b.send({ command: 'Peers.activate', peer: 77777777, tabId: 7 });
+        await c.send({ command: 'Peers.activate', peer: 77777777, tabId: 7 });
+        expect(fs.readdirSync(meet).sort()).toEqual([a, b, c].map((h) => `${h.proc.pid}.sock`).sort());
+        const again = await a.send({ command: 'Peers.tabs' });
+        expect(again.res.data.peers.map((p) => p.peer)).toEqual([b.proc.pid, c.proc.pid]);
+        expect(again.res.data.peers[0].tabs).toEqual(TABS_B);
     });
 
     test.each([
@@ -646,6 +738,13 @@ function deadSocket(file) {
         expect(reply.res.error).toContain(said);
     }, 10000);
 
+    test('Profile.identify finds a token that a block boundary of the storage\'s log cuts in two', async () => {
+        const token = randomToken();
+        storeSplitToken(udd, 'Profile 3', token, '000009.log');
+        const reply = await c.send({ command: 'Profile.identify', token, extensionId: EXTENSION_ID });
+        expect(reply.res).toEqual({ data: { dir: 'Profile 3', name: 'beta' } });
+    }, 10000);
+
     test('stdout holds nothing but frames, and a host that exits removes its socket', async () => {
         [a, b, c].forEach((host) => {
             const { out, rest } = host.frames();
@@ -660,29 +759,70 @@ function deadSocket(file) {
     });
 });
 
-(hasNvim ? describe : describe.skip)('server.lua: a meeting directory other users can enter', () => {
-    let root, host, server;
-
+// A meeting directory other users can enter, which a host refuses, and which the user
+// then removes as the Readme says. Set up before every other test of this file, since a
+// host tries to listen again only every 30 seconds: they pass while the others run.
+const refused = {};
+if (hasNvim) {
     beforeAll(async () => {
-        root = fs.mkdtempSync('/tmp/skp-');
-        const home = path.join(root, 'home');
-        server = await listenOn(path.join(root, 'sock'));
-        makeUdd(path.join(home, '.config', 'TestBrowser'), process.pid, path.join(root, 'sock'));
-        const env = envFor(root, home);
-        fs.mkdirSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`), { mode: 0o755 });
-        fs.chmodSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`), 0o755);
-        host = startHost([], env);
+        refused.root = fs.mkdtempSync('/tmp/skp-');
+        const home = path.join(refused.root, 'home');
+        refused.udd = path.join(home, '.config', 'TestBrowser');
+        refused.server = await listenOn(path.join(refused.root, 'sock'));
+        makeUdd(refused.udd, process.pid, path.join(refused.root, 'sock'));
+        const env = envFor(refused.root, home);
+        refused.folder = path.join(refused.root, 'run', `surfingkeys-${process.getuid()}`);
+        fs.mkdirSync(refused.folder, { mode: 0o755 });
+        fs.chmodSync(refused.folder, 0o755);
+        const hash = require('crypto').createHash('sha256').update(fs.realpathSync(refused.udd)).digest('hex').slice(0, 16);
+        refused.meet = path.join(fs.realpathSync(refused.folder), hash);
+        refused.host = startHost([], env);
+        refused.started = Date.now();
+        // its extension, asked to identify itself again
+        refused.asked = [];
+        refused.host.onRequest = (request) => {
+            refused.asked.push({ command: request.command, after: Date.now() - refused.started });
+            refused.host.answer(request, true, { data: true });
+        };
+        const token = randomToken();
+        storeToken(refused.udd, 'Default', token);
+        refused.identified = await refused.host.send({ command: 'Profile.identify', token, extensionId: EXTENSION_ID });
+        refused.listed = await refused.host.send({ command: 'Peers.tabs' });
+        refused.left = fs.readdirSync(refused.folder);
+        // what the Readme says fixes it
+        fs.rmSync(refused.folder, { recursive: true });
     });
-
     afterAll(() => {
-        stopHost(host);
-        server && server.close();
-        fs.rmSync(root, { recursive: true, force: true });
+        stopHost(refused.host);
+        refused.server && refused.server.close();
+        refused.root && fs.rmSync(refused.root, { recursive: true, force: true });
+    });
+}
+
+(hasNvim ? describe : describe.skip)('server.lua: a meeting directory other users can enter', () => {
+    test('is not used: Peers.tabs says why, and the directory is left as it was', () => {
+        expect(refused.listed.res.error).toContain('must have mode 0700');
+        expect(refused.identified.res.error).toContain('must have mode 0700');
+        expect(refused.left).toEqual([]);
     });
 
-    test('is not used: Peers.tabs says why, and the directory is left as it was', async () => {
-        const reply = await host.send({ command: 'Peers.tabs' });
-        expect(reply.res.error).toContain('must have mode 0700');
-        expect(fs.readdirSync(path.join(root, 'run', `surfingkeys-${process.getuid()}`))).toEqual([]);
-    });
+    test('removed, it is made again: the host listens within 30 seconds, unasked, and has itself named', async () => {
+        const socket = path.join(refused.meet, `${refused.host.proc.pid}.sock`);
+        while (!fs.existsSync(socket) && Date.now() - refused.started < 40000) {
+            await sleep(200);
+        }
+        expect(fs.existsSync(socket)).toBe(true);
+        [refused.meet, path.dirname(refused.meet)].forEach((dir) => expect(fs.lstatSync(dir).mode & 0o777).toBe(0o700));
+        // the first try is 30 seconds after the host started
+        while (!refused.asked.length && Date.now() - refused.started < 41000) {
+            await sleep(100);
+        }
+        expect(refused.asked).toEqual([{ command: 'Profile.identify', after: expect.any(Number) }]);
+        expect(refused.asked[0].after).toBeGreaterThanOrEqual(29000);
+        // what the extension does when asked: a new token
+        const token = randomToken();
+        storeToken(refused.udd, 'Default', token);
+        const reply = await refused.host.send({ command: 'Profile.identify', token, extensionId: EXTENSION_ID });
+        expect(reply.res).toEqual({ data: { dir: 'Default', name: 'Person 1' } });
+    }, 45000);
 });

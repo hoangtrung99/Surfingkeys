@@ -199,7 +199,10 @@ The command palette (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) lists this p
 open tabs first. The tabs open in the browser's other profiles follow, a moment later,
 under *Tabs in* and each profile's name. Picking one brings that profile's window to the
 front with the tab selected. If the tab or the profile has closed since the list was
-read, the palette stays open and says so.
+read, the palette stays open and says so. If that profile does not confirm the switch
+within 2.5 seconds, its browser or host being busy, the palette says it is *not
+confirmed yet* rather than that it failed: the request has reached that profile, and the
+tab may still come forward once it catches up.
 
 How it works: the browser runs one host per open profile, since Surfingkeys in each
 profile starts its own. Each host listens on a UNIX socket, and the palette's host asks
@@ -213,8 +216,11 @@ with `$TMPDIR` in place of `$XDG_RUNTIME_DIR` when that is not set, and `/tmp` w
 neither is (macOS has a private `$TMPDIR` for each user). The host makes both folders
 with mode `0700`. If either one exists and belongs to another user, or other users can
 open it, the host does not use it, and the palette lists only this profile's tabs.
-Removing the folder fixes that. A host removes its socket when it exits. A host
-that was killed leaves its socket behind, and the next host to find it removes it.
+Removing the folder fixes that, without restarting the browser: a host that could not
+listen tries again every 30 seconds, and whenever its palette opens. A host whose socket
+disappears while it runs (the folder removed, or emptied by a cleaner of temporary files)
+makes a new one the same way. A host removes its socket when it exits. A host that was
+killed leaves its socket behind, and the next host to find it removes it.
 
 What is shared, and with whom:
 
@@ -228,11 +234,11 @@ What is shared, and with whom:
 
 Which profile a host serves is not something a host or an extension can know on its own.
 So when Surfingkeys connects to its host, it writes a random token to its own
-`chrome.storage.local`. The host looks for that token in each profile's
-`Local Extension Settings/<extension id>/` folder, the files where the browser keeps that
-storage. The profile whose folder holds it is the one the host serves, and its name comes
-from `Local State`, as in the profile list. Surfingkeys then deletes the token. When it is
-not found, the tabs are listed under *another profile*.
+`chrome.storage.local`, never to the storage Chrome syncs. The host looks for that token
+in each profile's `Local Extension Settings/<extension id>/` folder, the files where the
+browser keeps that storage. The profile whose folder holds it is the one the host serves,
+and its name comes from `Local State`, as in the profile list. Surfingkeys then deletes
+the token. When it is not found, the tabs are listed under *another profile*.
 
 It needs everything [switching profiles](#switching-profiles) needs, and also:
 

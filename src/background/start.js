@@ -232,6 +232,12 @@ function getSubSettings(set, keys) {
 }
 
 function _save(storage, data, cb) {
+    // _save never writes the identifying token, to either area: it is how the adapters'
+    // loadRawSettings copies one area into the other, and only identifyToHost's own
+    // write of local storage may hold the token. Copied into sync storage, it is never
+    // removed from there -- identifyToHost removes it from local storage only -- and it
+    // is synced to every profile and computer signed in to the same account.
+    delete data[PROFILE_TOKEN_KEY];
     if (storage === chrome.storage.sync) {
         // don't store snippets from localPath into sync storage, since sync storage has its quota.
         if (data.localPath) {
@@ -2631,8 +2637,10 @@ function start(browser) {
     // storage, and the host finds the profile folder holding it (server.lua's
     // Profile.identify): once each time a host connects, and when the host asks.
     //
-    // The token is removed once the host has looked. It is no setting, and a key left in
-    // local storage is copied into sync storage with the settings.
+    // The token lives in LOCAL storage only, and only until the host has looked: it is no
+    // setting. Settings are copied between local and sync storage while it is there --
+    // a page loading reads them -- and _save leaves it out of both directions, since
+    // nothing here removes a copy that reaches sync storage.
     let identifying = false;
     function identifyToHost() {
         if (identifying) {

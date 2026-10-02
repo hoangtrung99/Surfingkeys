@@ -607,6 +607,23 @@ describe("the browser's other profiles", () => {
         expect(notice()).toBeNull();
     });
 
+    // that profile had the request and did not answer in time: it may still switch
+    test('a switch that profile has not confirmed is said as such, not as a failure, and the palette stays', async () => {
+        await open();
+        await type('quarterly');
+        f.press('<Enter>', { target: input() });
+        await f.settle();
+        answerSwitch({ error: 'Surfingkeys in that profile did not confirm the switch within 2.5 seconds', kind: 'pending' });
+        await f.settle();
+        expect(isOpen()).toBe(true);
+        expect(notice()).toBe('Quarterly plan: not confirmed yet — that profile may still switch to it.');
+        expect(ui().querySelector('.sk_palette_notice').classList.contains('sk_palette_error')).toBe(false);
+        expect(titleOf(focused())).toBe('Quarterly plan');
+        // and Enter asks again
+        f.press('<Enter>', { target: input() });
+        expect(sentAll('activatePeerTab')).toHaveLength(2);
+    });
+
     test('a click switches the same way, one switch at a time', async () => {
         await open();
         rowTitled('Q3').onclick();

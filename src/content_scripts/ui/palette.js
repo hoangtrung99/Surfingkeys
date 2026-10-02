@@ -345,7 +345,8 @@ export default function createPalette(omnibar, front, searchEngine) {
 
     // The profile holding the tab brings it forward, and the palette closes once that
     // profile says it has. A failure -- the tab or the profile gone since the list was
-    // read, no host -- stays here, said above the rows. One switch at a time.
+    // read, no host -- stays here, said above the rows, as does a switch that profile has
+    // not confirmed. One switch at a time.
     function switchToPeer(item) {
         if (switching) {
             return;
@@ -362,6 +363,14 @@ export default function createPalette(omnibar, front, searchEngine) {
             if (r && !r.error) {
                 notice = null;
                 front.hidePopup();
+                return;
+            }
+            // That profile had the request and did not answer in time: it may still carry
+            // it out, and a failure said here would be contradicted by its window coming
+            // forward a moment later.
+            if (r && r.kind === 'pending') {
+                notice = {text: `${item.tab.title || item.url}: not confirmed yet — that profile may still switch to it.`};
+                update(true);
                 return;
             }
             notice = {text: `Could not switch to that tab: ${(r && r.error) || 'no answer'}.`, error: true};
