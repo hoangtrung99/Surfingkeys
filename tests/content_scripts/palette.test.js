@@ -500,13 +500,13 @@ describe('actions', () => {
         await f.settle();
     }
 
-    test('Tab on an empty input lists the 27 actions under an Actions chip', async () => {
+    test('Tab on an empty input lists the 28 actions under an Actions chip', async () => {
         await openActions();
         expect(titles()).toEqual([
             'Copy URL', 'Copy URL as Markdown', 'Reload', 'Duplicate Tab', 'Pin / Unpin Tab',
             'Mute / Unmute Tab', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right',
             'Close Tabs to the Left', 'Reopen Closed Tab', 'Move Tab to New Window', 'Move Tab to Window…',
-            'Gather All Windows', 'Zoom In', 'Zoom Out', 'Reset Zoom', 'View Source', 'Change Theme…',
+            'Gather All Windows', 'Switch Profile…', 'Zoom In', 'Zoom Out', 'Reset Zoom', 'View Source', 'Change Theme…',
             'Auto Theme (Follow System Light / Dark)', 'Settings…', 'Settings: Appearance', 'Settings: Keys', 'Settings: Sites',
             'Disable / Enable Surfingkeys on This Site', 'Keyboard Shortcuts…', 'Show All Key Mappings',
         ]);
@@ -620,6 +620,39 @@ describe('actions', () => {
             jest.useRealTimers();
         }
     });
+
+    test('Switch Profile… opens the profile list once the palette is gone', async () => {
+        jest.useFakeTimers();
+        try {
+            f.answers.getProfiles = () => ({ profiles: [
+                { dir: 'Default', name: 'Person 1', email: '' },
+                { dir: 'Profile 1', name: 'Work', email: 'ann@example.com' },
+            ] });
+            await openActions();
+            rowTitled('Switch Profile…').onclick();
+            expect(ui().style.display).toBe('none');
+            jest.advanceTimersByTime(100);
+            await f.settle();
+            expect(ui().style.display).toBe('');
+            expect(ui().classList.contains('sk_palette')).toBe(false);
+            expect(input().placeholder).toBe('Switch to profile…');
+            expect(lis().map((li) => li.querySelector('.title').textContent)).toEqual(['Person 1', 'Work']);
+            // nothing is opened until a row is picked
+            expect(sentAll('openProfile')).toHaveLength(0);
+
+            await type('work');
+            f.press('<Enter>', { target: input() });
+            // open until the browser has taken it
+            expect(sentOne('openProfile')).toEqual(expect.objectContaining({ profile: 'Profile 1' }));
+            expect(ui().style.display).toBe('');
+            f.held.find((h) => h.message.action === 'openProfile').respond({ profile: 'Profile 1' });
+            await f.settle();
+            expect(ui().style.display).toBe('none');
+        } finally {
+            jest.useRealTimers();
+            delete f.answers.getProfiles;
+        }
+    });
 });
 
 describe('keys typed in the page before the palette had focus', () => {
@@ -667,7 +700,7 @@ describe('keys typed in the page before the palette had focus', () => {
         f.held.find((h) => h.message.action === 'tabSwitcherTabs').respond({ tabs: TABS });
         await f.settle();
         expect(prompt().textContent).toBe('Actions');
-        expect(lis()).toHaveLength(27);
+        expect(lis()).toHaveLength(28);
     });
 
     test('posted by the page over window.postMessage, they do nothing', async () => {

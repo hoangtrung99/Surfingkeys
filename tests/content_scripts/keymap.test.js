@@ -106,6 +106,7 @@ describe('keys that ask the UI', () => {
         ['og', { action: 'openOmnibar', type: 'SearchEngine', extra: 'g' }],
         ['od', { action: 'openOmnibar', type: 'SearchEngine', extra: 'd' }],
         [';T', { action: 'openOmnibar', type: 'Themes' }],
+        ['gP', { action: 'openOmnibar', type: 'Profiles' }],
         ['T', { action: 'chooseTab' }],
         [';G', { action: 'groupTab' }],
         ['/', { action: 'openFinder' }],

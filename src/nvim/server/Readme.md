@@ -1,10 +1,12 @@
-This native messaging host serves two features:
+This native messaging host serves three features:
 
 * the neovim editor, which needs it to run `nvim` for you.
 * loading settings from `~/.surfingkeys.js`, by setting **Load settings from** to
   `<native>` on the settings page — the browser can not read a file in your home
   directory itself. Safari has the Surfingkeys app for this and needs none of the
   setup below.
+* [switching browser profiles](#switching-profiles) with `gP` (Chromium-based
+  browsers on macOS and Linux) — an extension sees only the profile it runs in.
 
 ## Installation under Windows
 
@@ -50,7 +52,9 @@ This native messaging host serves two features:
 
 ## Installation under Mac / Linux
 
-1. Download `server.lua` from https://raw.githubusercontent.com/brookhong/Surfingkeys/master/src/nvim/server/server.lua to a folder, such as `$HOME/.Surfingkeys_NativeMessagingHosts/`.
+1. Download `server.lua` from https://raw.githubusercontent.com/hoangtrung99/Surfingkeys/master/src/nvim/server/server.lua to a folder, such as `$HOME/.Surfingkeys_NativeMessagingHosts/`.
+   (Upstream's copy serves the editor and `<native>` settings too, but not profile
+   switching.)
 
 1. Create a `start.sh` under the same folder, and `chmod +x` it. Two lines in it are
    easy to leave out, and both fail silently — the host never starts and the browser
@@ -86,12 +90,22 @@ This native messaging host serves two features:
             "path": "<PATH_TO_YOUR_START_SH>/start.sh"
         }
 
+    The unpacked build (from Releases or `npm run build`) always has the id
+    `aajlcoiaogpknhgninhopncaldipjdnp`, the first one listed. The Chrome Web Store
+    build ("Surfingkeys Palette") has its own: add the id `chrome://extensions` shows
+    for it to `allowed_origins`.
+
     **Chromium User Data Directory**
     ### Mac OS X
     The default location is in the Application Support folder:
 
     * [Chrome] ~/Library/Application Support/Google/Chrome
     * [Chromium] ~/Library/Application Support/Chromium
+    * [Helium] ~/Library/Application Support/net.imput.helium — so the file is
+      `~/Library/Application Support/net.imput.helium/NativeMessagingHosts/surfingkeys.json`.
+      Helium also looks in Chrome's folder,
+      `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`, when its own
+      has no `surfingkeys.json`, so a file set up for Chrome already serves it.
 
     ### Linux
     The default location is in ~/.config:
@@ -131,6 +145,49 @@ Save it as `surfingkeys.json` under
 
 Then restart your browser.
 
+## Switching profiles
+
+`gP`, `:profile` and *Switch Profile…* in the command palette list the browser's
+profiles; picking one opens Surfingkeys' start page in it. The tab goes into that
+profile's last used window, which comes to the front, or into a new window when the
+profile has none open. The host does it by starting the browser itself with
+`--profile-directory`, which hands the request to the browser already running.
+
+It needs:
+
+* a Chromium-based browser (Chrome, Chromium, Helium, Brave, Edge…) on **macOS or
+  Linux**. Windows is not supported: see the next point.
+* `start.sh` to start nvim with **`exec`**, as both the copy here and the one above
+  do. The browser must be nvim's parent: that is how the host tells which browser,
+  which data directory and which executable to use. On Windows `start.bat` cannot
+  `exec`, so the parent is `cmd.exe`. A wrapper that runs nvim as a child (some
+  version managers do) breaks it the same way.
+* the `server.lua` from this fork. An older one makes the list say so.
+* Surfingkeys enabled in the profile you switch to, or the browser blocks the page it
+  opens there.
+
+The host refuses rather than guesses. It uses a data directory only when the
+`SingletonLock` in it names the browser that started the host, and it opens only
+profiles that `Local State` lists. A wrong directory would start a second, separate
+browser instead of reaching the running one, and a profile name the browser does not
+have would create a new, empty profile. The menu says why when it refuses.
+
+What else to expect:
+
+* A profile that is not open and is set to *Continue where you left off* opens with
+  its last session restored, the start page added to it. The browser gives no way to
+  skip that.
+* In Helium, a profile that has never finished onboarding also gets a `chrome://setup`
+  tab.
+* A profile created or renamed in the last ten seconds or so may be missing or show
+  its old name: the browser writes `Local State` lazily.
+* No profile is marked as the current one: the host is shared by every profile and
+  cannot tell which one asked. Picking the profile you are in just opens the start
+  page in a new tab.
+* The menu answers once the browser has taken the request, or after 25 seconds at
+  most: the browser waits up to 20 for the running instance to respond (and then, as
+  when started from a terminal, ends that instance and takes its place).
+
 ## Note on `<native>` settings
 
 When the file can not be read — no host installed, or no answer from it — the page
@@ -138,5 +195,6 @@ keeps the settings from the last successful read, and the settings page says wha
 wrong.
 
 To see why, `touch ~/.surfingkeys.log.on` and reload the extension: each host process
-then writes `~/.surfingkeys.<pid>.log`, holding every message in both directions.
-Delete the marker to stop it.
+then writes `~/.surfingkeys.<pid>.log`, holding every message in both directions —
+the names and email addresses of your browser profiles included, once the profile list
+has been opened. Delete the marker to stop it.

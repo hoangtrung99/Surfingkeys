@@ -26,6 +26,7 @@ import { RUNTIME, runtime } from '../common/runtime.js';
 import LLMChat from './llmchat';
 import createPalette from './palette';
 import createThemeMenu from './themeMenu';
+import createProfileMenu from './profileMenu';
 
 const separator = '➤';
 const separatorHtml = `<span class='separator'>${separator}</span>`;
@@ -830,6 +831,7 @@ function createOmnibar(front, clipboard) {
     self.addHandler('LLMChat', LLMChat(self, front));
     self.addHandler('Palette', createPalette(self, front, searchEngine));
     self.addHandler('Themes', createThemeMenu(self, front));
+    self.addHandler('Profiles', createProfileMenu(self, front));
 
     front._actions['updateOmnibarResult'] = function(message) {
         self.listWords(message.words);

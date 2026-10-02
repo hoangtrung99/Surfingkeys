@@ -163,6 +163,9 @@ export default function createPalette(omnibar, front, searchEngine) {
         // without this handler's onClose and keeps the palette's look
         {name: 'Move Tab to Window…', keys: 'W', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Windows'}), 100)},
         {name: 'Gather All Windows', keys: ';gw', also: 'merge', run: () => RUNTIME('gatherWindows')},
+        // Not gated on the browser: nothing but the Chromium build installs a way to
+        // open the palette (tabSwitcher.js), and that is the one browser it works in.
+        {name: 'Switch Profile…', keys: 'gP', also: 'browser profile person account user window', run: () => setTimeout(() => front._actions['openOmnibar']({type: 'Profiles'}), 100)},
         {name: 'Zoom In', keys: 'zi', run: () => once('setZoom', {zoomFactor: 0.1})},
         {name: 'Zoom Out', keys: 'zo', run: () => once('setZoom', {zoomFactor: -0.1})},
         {name: 'Reset Zoom', keys: 'zr', run: () => once('setZoom', {zoomFactor: 0})},

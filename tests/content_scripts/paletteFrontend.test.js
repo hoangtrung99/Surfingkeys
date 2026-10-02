@@ -13,7 +13,7 @@ const ALIASES = [
     { alias: 'g', prompt: 'google', url: 'https://www.google.com/search?q=' },
     { alias: 'd', prompt: 'duckduckgo', url: 'https://duckduckgo.com/?q=' },
 ];
-const ACTION_COUNT = 27;
+const ACTION_COUNT = 28;
 
 const sent = [];
 const listeners = [];

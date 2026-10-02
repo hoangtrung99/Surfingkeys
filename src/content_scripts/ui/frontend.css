@@ -713,3 +713,13 @@ div.sk_arrow[dir=up]>div:nth-of-type(2) {
     font-size: 11px;
     color: #555;
 }
+/* Profile menu (profileMenu.js): a line saying what is happening, or why not */
+#sk_omnibar .sk_profile_note {
+    padding: 8px 10px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#sk_omnibar .sk_profile_note a {
+    color: inherit;
+    text-decoration: underline;
+}

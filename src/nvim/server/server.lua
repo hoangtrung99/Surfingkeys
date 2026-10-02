@@ -477,6 +477,565 @@ function read_settings()
     return { data = content }
 end
 
+-- Returned by a handler that answers LATER through send_reply, so respond_to writes
+-- nothing for it. Profile.open is the one such handler: what it reports is the exit
+-- code of the browser it launched, which can take 20 seconds to arrive, and waiting
+-- for it inside respond_to would hold every other request -- a settings read on each
+-- page load -- behind it.
+local DEFERRED = {}
+
+-- Writes the reply to request `id`. Every reply goes through here, deferred or not.
+local function send_reply(chan, id, status, res)
+    -- json_encode refuses a string that is not UTF-8 (a path, a program's output), and
+    -- a reply that is never written leaves the browser waiting for it.
+    local encoded, resp = pcall(vim.fn.json_encode, {
+        status = status,
+        res = res,
+        id = id
+    })
+    if not encoded then
+        logw("stdout failed to encode: " .. tostring(resp) .. "\n")
+        status, res = false, "the native host could not encode its reply"
+        resp = vim.fn.json_encode({ status = status, res = res, id = id })
+    end
+    -- A write that throws leaves the browser waiting on a reply that never arrives.
+    local written, werr = pcall(write_stdout, chan, resp)
+    if not written then
+        logw("stdout failed: " .. tostring(werr) .. "\n")
+    end
+    -- Settings are read on every page load, so logging the reply text would grow this
+    -- log by the size of ~/.surfingkeys.js per page.
+    if status and type(res) == "table" and type(res.data) == "string" then
+        logw("stdout: Settings.read " .. #res.data .. " bytes\n")
+    else
+        logw("stdout: " .. resp .. "\n")
+    end
+end
+
+-- Profile switching (gP in the extension) ---------------------------------------------
+--
+-- An extension sees only its own profile: it can neither list the others nor open a
+-- tab in one. A second browser process started with --profile-directory can. It hands
+-- its command line to the browser already running, which opens the URL in the last
+-- active window of that profile (or a new window when it has none), and exits.
+--
+-- Everything here rests on this host's PARENT being the browser, which holds because
+-- start.sh EXECs nvim. That is the only thing tying the host to one browser: on
+-- Windows start.bat cannot exec and the parent is cmd.exe, so Windows is refused
+-- rather than guessed at.
+
+local uv = vim.loop
+
+-- The browser's exit code when it handed its command line to the instance already
+-- running (CHROME_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED). Success is NOT 0: a check
+-- for 0 reports every switch that worked as a failure.
+local EXIT_PROCESS_NOTIFIED = 24
+-- PROFILE_IN_USE, which LOCK_ERROR shares: the running browser did not take it.
+local EXIT_PROFILE_IN_USE = 21
+-- The launched browser waits up to 20 seconds for the running one to acknowledge, so
+-- the deadline sits past that: an earlier one reports "no answer" while the outcome is
+-- still being decided.
+local PROFILE_OPEN_TIMEOUT_MS = 25000
+
+-- Local State can hold an object with an empty key, which vim.fn.json_decode can only
+-- return as a special _TYPE/_VAL table; vim.json, where this nvim has it, reads it as
+-- a plain one.
+local json_decode_any = (vim.json and vim.json.decode) or vim.fn.json_decode
+
+local function os_name()
+    if vim.fn.has('win32') == 1 then
+        return 'windows'
+    end
+    local ok, uname = pcall(uv.os_uname)
+    local sysname = ok and type(uname) == 'table' and uname.sysname or ''
+    if sysname == 'Darwin' then
+        return 'mac'
+    elseif sysname == 'Linux' then
+        return 'linux'
+    end
+    return sysname
+end
+
+local function read_file(path)
+    local f = io.open(path, "rb")
+    if f == nil then
+        return nil
+    end
+    local content = f:read("*a")
+    f:close()
+    return content
+end
+
+local function realpath(path)
+    local ok, real = pcall(uv.fs_realpath, path)
+    return (ok and type(real) == 'string') and real or path
+end
+
+-- LuaJIT's ffi with the two libSystem calls below declared, or nil on an nvim built
+-- with PUC Lua. Each declaration is made on its own: another plugin may have made it
+-- already, and the error a redeclaration raises would take the other one with it.
+local function mac_ffi()
+    local ok, ffi = pcall(require, 'ffi')
+    if not ok then
+        return nil
+    end
+    pcall(ffi.cdef, 'int proc_pidpath(int pid, void *buffer, uint32_t buffersize);')
+    pcall(ffi.cdef, 'int sysctl(int *name, unsigned int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);')
+    return ffi
+end
+
+-- The arguments in a KERN_PROCARGS2 buffer, given what follows its leading argc: the
+-- executable path, NUL padding, then argc NUL-terminated arguments (the environment
+-- comes after them).
+local function parse_procargs2(data, argc)
+    local pos = string.find(data, "\0", 1, true)
+    if pos == nil then
+        return nil
+    end
+    while pos <= #data and string.byte(data, pos) == 0 do
+        pos = pos + 1
+    end
+    local argv = {}
+    while #argv < argc and pos <= #data do
+        local stop = string.find(data, "\0", pos, true) or (#data + 1)
+        argv[#argv + 1] = string.sub(data, pos, stop - 1)
+        pos = stop + 1
+    end
+    return argv
+end
+
+-- The exact argv of process `pid` on macOS, which `ps -o args` cannot give: it joins
+-- the arguments with spaces, and the default data directory has one in it.
+local function mac_argv(pid)
+    local ffi = mac_ffi()
+    if ffi == nil then
+        return nil
+    end
+    local ok, argv = pcall(function()
+        local int_size = ffi.sizeof('int')
+        local argmax = ffi.new('int[1]')
+        local size = ffi.new('size_t[1]', int_size)
+        -- CTL_KERN, KERN_ARGMAX
+        if ffi.C.sysctl(ffi.new('int[2]', 1, 8), 2, argmax, size, nil, 0) ~= 0 or argmax[0] <= int_size then
+            return nil
+        end
+        local buf = ffi.new('char[?]', argmax[0])
+        size[0] = argmax[0]
+        -- CTL_KERN, KERN_PROCARGS2, pid
+        if ffi.C.sysctl(ffi.new('int[3]', 1, 49, pid), 3, buf, size, nil, 0) ~= 0 then
+            return nil
+        end
+        local len = tonumber(size[0])
+        if len <= int_size then
+            return nil
+        end
+        return parse_procargs2(ffi.string(buf + int_size, len - int_size), ffi.cast('int *', buf)[0])
+    end)
+    return ok and argv or nil
+end
+
+local function mac_exe(pid)
+    local ffi = mac_ffi()
+    if ffi ~= nil then
+        local ok, exe = pcall(function()
+            -- PROC_PIDPATHINFO_MAXSIZE
+            local buf = ffi.new('char[?]', 4096)
+            local n = ffi.C.proc_pidpath(pid, buf, 4096)
+            return n > 0 and ffi.string(buf, n) or nil
+        end)
+        if ok and exe then
+            return exe
+        end
+    end
+    -- argv[0], which is the full path for a browser started from the Finder or the
+    -- Dock, and is used only then. A list runs without a shell, its output captured.
+    local ok, out = pcall(vim.fn.system, {'ps', '-o', 'comm=', '-p', tostring(pid)})
+    if ok and vim.v.shell_error == 0 and type(out) == 'string' then
+        out = string.gsub(out, '%s+$', '')
+        if string.sub(out, 1, 1) == '/' then
+            return out
+        end
+    end
+    return nil
+end
+
+local function linux_argv(pid)
+    local raw = read_file('/proc/' .. pid .. '/cmdline')
+    if raw == nil or raw == '' then
+        return nil
+    end
+    local argv = {}
+    for arg in string.gmatch(raw, '([^%z]*)%z') do
+        argv[#argv + 1] = arg
+    end
+    return argv
+end
+
+-- Every reading of a --user-data-dir value in `argv`. Chromium on Linux rewrites its
+-- process title, after which /proc shows the whole command line as ONE argument joined
+-- with spaces, so a value is also tried cut at each space in it. A wrong cut costs
+-- nothing: only a directory whose SingletonLock names the browser is ever used.
+local function udd_from_argv(argv, cwd)
+    local found = {}
+    local function add(value)
+        if string.sub(value, 1, 1) ~= '/' then
+            -- relative to the browser's own working directory, as it reads it
+            if cwd == nil then
+                return
+            end
+            value = cwd .. '/' .. value
+        end
+        found[#found + 1] = value
+    end
+    for _, arg in ipairs(argv) do
+        local from = 1
+        while true do
+            local s, e = string.find(arg, 'user-data-dir=', from, true)
+            if s == nil then
+                break
+            end
+            local before = string.sub(arg, 1, s - 1)
+            if string.match(before, '^%-%-?$') or string.match(before, ' %-%-?$') then
+                local value = string.sub(arg, e + 1)
+                add(value)
+                for i = 1, #value do
+                    if string.sub(value, i, i) == ' ' then
+                        add(string.sub(value, 1, i - 1))
+                    end
+                end
+            end
+            from = e + 1
+        end
+    end
+    return found
+end
+
+-- The pid in <dir>/SingletonLock, a symlink to "<hostname>-<pid>" that the browser
+-- holding the directory makes. A hostname can contain '-', so the pid follows the LAST
+-- one. nil for no lock, or one that is a plain file as old macOS builds left it.
+local function lock_pid(dir)
+    local target = uv.fs_readlink(dir .. '/SingletonLock')
+    if type(target) ~= 'string' then
+        return nil
+    end
+    return tonumber(string.match(target, '%-(%d+)$'))
+end
+
+local function subdirs(dir)
+    local list = {}
+    local handle = uv.fs_scandir(dir)
+    if handle == nil then
+        return list
+    end
+    while true do
+        local name, kind = uv.fs_scandir_next(handle)
+        if name == nil then
+            break
+        end
+        if kind ~= 'file' then
+            list[#list + 1] = dir .. '/' .. name
+        end
+    end
+    return list
+end
+
+-- Which browser started this host: its pid, its data directory (where Local State and
+-- the profiles are) and, when `need_exe`, its executable. Or nil and the reason.
+--
+-- The data directory is accepted only when its SingletonLock names the parent. Any
+-- other is never launched with: a browser started on a directory no running browser
+-- holds does not hand anything over, it STARTS -- a second, complete browser on
+-- another set of profiles.
+local function locate_browser(need_exe)
+    local system = os_name()
+    if system ~= 'mac' and system ~= 'linux' then
+        return nil, 'switching profiles works on macOS and Linux only'
+    end
+    local ppid = uv.os_getppid and uv.os_getppid()
+    if type(ppid) ~= 'number' or ppid <= 1 then
+        return nil, 'the browser that started this host has gone'
+    end
+
+    local argv, cwd
+    if system == 'linux' then
+        argv = linux_argv(ppid)
+        cwd = uv.fs_readlink('/proc/' .. ppid .. '/cwd')
+    else
+        argv = mac_argv(ppid)
+    end
+    local named = argv and udd_from_argv(argv, cwd) or {}
+    local root
+    if system == 'linux' then
+        -- read by Chromium on Linux only, and passed on to its children
+        local env_dir = os.getenv('CHROME_USER_DATA_DIR')
+        if env_dir and string.sub(env_dir, 1, 1) == '/' then
+            named[#named + 1] = env_dir
+        end
+        local xdg = os.getenv('XDG_CONFIG_HOME')
+        root = (xdg and xdg ~= '') and xdg or (home_dir .. '/.config')
+    else
+        root = home_dir .. '/Library/Application Support'
+    end
+
+    -- Looked through in stages, nearest first, and the first stage holding a match
+    -- decides: the command line names the directory outright, and the default places
+    -- sit one level (Chromium, Helium) or two (Google/Chrome) below the root.
+    local top = nil
+    local function top_dirs()
+        top = top or subdirs(root)
+        return top
+    end
+    local stages = {
+        function() return named end,
+        top_dirs,
+        function()
+            local deeper = {}
+            for _, dir in ipairs(top_dirs()) do
+                for _, sub in ipairs(subdirs(dir)) do
+                    deeper[#deeper + 1] = sub
+                end
+            end
+            return deeper
+        end,
+    }
+    local udd
+    for _, stage in ipairs(stages) do
+        local matches, seen = {}, {}
+        for _, dir in ipairs(stage()) do
+            if lock_pid(dir) == ppid then
+                local real = realpath(dir)
+                if not seen[real] then
+                    seen[real] = true
+                    matches[#matches + 1] = real
+                end
+            end
+        end
+        if #matches > 1 then
+            return nil, 'more than one browser data directory names process ' .. ppid
+                .. ' in its SingletonLock: ' .. table.concat(matches, ', ')
+        elseif #matches == 1 then
+            udd = matches[1]
+            break
+        end
+    end
+    if udd == nil then
+        return nil, 'found no browser data directory whose SingletonLock names process ' .. ppid
+            .. ', the one that started this host: start.sh must start nvim with exec'
+    end
+
+    local exe
+    if need_exe then
+        if system == 'linux' then
+            exe = uv.fs_readlink('/proc/' .. ppid .. '/exe')
+            -- the browser was updated while it ran: the new binary is at the same path
+            exe = type(exe) == 'string' and string.gsub(exe, ' %(deleted%)$', '') or nil
+        else
+            exe = mac_exe(ppid)
+        end
+        if type(exe) ~= 'string' or string.sub(exe, 1, 1) ~= '/' or vim.fn.executable(exe) ~= 1 then
+            return nil, 'could not find the executable of the browser that started this host (process '
+                .. ppid .. ')'
+        end
+    end
+    return { pid = ppid, udd = udd, exe = exe }
+end
+
+local function profile_label(info)
+    local name = type(info.name) == 'string' and info.name or ''
+    local gaia = type(info.gaia_name) == 'string' and info.gaia_name or ''
+    if gaia ~= '' and gaia ~= name then
+        return name ~= '' and (gaia .. ' (' .. name .. ')') or gaia
+    end
+    return name
+end
+
+-- The profiles <udd>/Local State lists, in the order of the browser's own profile
+-- menu. Read anew on every request: a profile deleted since the list was shown must
+-- not be launched.
+local function read_profiles(udd)
+    local path = udd .. '/Local State'
+    local text = read_file(path)
+    if text == nil then
+        return nil, 'could not read ' .. path
+    end
+    local ok, state = pcall(json_decode_any, text)
+    if not ok or type(state) ~= 'table' then
+        return nil, 'could not parse ' .. path
+    end
+    local function field(t, key)
+        return (type(t) == 'table' and type(t[key]) == 'table') and t[key] or {}
+    end
+    local cache = field(field(state, 'profile'), 'info_cache')
+    -- Profiles deleted but not yet removed from disk, by path or by name.
+    local gone = {}
+    for _, p in ipairs(field(field(state, 'profiles'), 'profile_basenames_deleted')) do
+        if type(p) == 'string' then
+            gone[p] = true
+            gone[string.match(p, '[^/\\]+$') or p] = true
+        end
+    end
+
+    local list, by_dir = {}, {}
+    local function add(dir)
+        local info = cache[dir]
+        if type(dir) ~= 'string' or by_dir[dir] or gone[dir] or type(info) ~= 'table' then
+            return
+        end
+        local entry = { dir = dir, name = profile_label(info) }
+        if entry.name == '' then
+            entry.name = dir
+        end
+        if type(info.user_name) == 'string' and info.user_name ~= '' then
+            entry.email = info.user_name
+        end
+        by_dir[dir] = entry
+        list[#list + 1] = entry
+    end
+    for _, dir in ipairs(field(field(state, 'profile'), 'profiles_order')) do
+        add(dir)
+    end
+    -- Ones the order misses, as the browser itself sorts them: by name.
+    local rest = {}
+    for dir, info in pairs(cache) do
+        if type(dir) == 'string' and type(info) == 'table' and not by_dir[dir] and not gone[dir] then
+            local label = profile_label(info)
+            rest[#rest + 1] = { dir = dir, key = string.lower(label ~= '' and label or dir) }
+        end
+    end
+    table.sort(rest, function(a, b)
+        if a.key ~= b.key then
+            return a.key < b.key
+        end
+        return a.dir < b.dir
+    end)
+    for _, r in ipairs(rest) do
+        add(r.dir)
+    end
+    return { list = list, by_dir = by_dir }
+end
+
+local function list_profiles()
+    local browser, err = locate_browser(false)
+    if browser == nil then
+        return { error = err }
+    end
+    local profiles, perr = read_profiles(browser.udd)
+    if profiles == nil then
+        return { error = perr }
+    end
+    return { data = profiles.list }
+end
+
+-- The launched browser's output, for an error message: kept short, and UTF-8, which
+-- is all a reply can carry.
+local function job_output(lines)
+    local text = table.concat(lines, ' ')
+    text = string.gsub(text, '%s+', ' ')
+    text = string.gsub(text, '^ ', '')
+    text = string.gsub(text, ' $', '')
+    if #text > 300 then
+        -- not in the middle of a character
+        text = string.gsub(string.sub(text, 1, 300), '[\192-\255][\128-\191]*$', '') .. '…'
+    end
+    if not pcall(vim.fn.json_encode, text) then
+        text = string.gsub(text, '[\128-\255]', '?')
+    end
+    return text
+end
+
+-- Starts the browser on `req.url` in profile `req.profile`, and answers request
+-- `req.id` once it has seen what became of it: the outcome is the launched browser's
+-- exit code, not that it started.
+local function open_profile(chan, req)
+    local id = req['id']
+    local dir, url = req['profile'], req['url']
+    -- only Surfingkeys' own page: anything else here is a URL opened by whoever can
+    -- send this host a message
+    if type(url) ~= 'string' or string.sub(url, 1, 19) ~= 'chrome-extension://' or string.find(url, '[%c%s]') then
+        return { error = 'only a chrome-extension:// page is opened in another profile' }
+    end
+    local browser, err = locate_browser(true)
+    if browser == nil then
+        return { error = err }
+    end
+    local profiles, perr = read_profiles(browser.udd)
+    if profiles == nil then
+        return { error = perr }
+    end
+    -- --profile-directory naming a profile the browser does not have CREATES it.
+    if type(dir) ~= 'string' or profiles.by_dir[dir] == nil or string.find(dir, '[/\\]')
+        or vim.fn.isdirectory(browser.udd .. '/' .. dir) ~= 1 then
+        return { error = 'the browser has no profile "' .. tostring(dir) .. '" (any more): open the list again' }
+    end
+
+    local output = {}
+    local settled = false
+    local timer = nil
+    local function finish(res)
+        if settled then
+            return
+        end
+        settled = true
+        if timer ~= nil then
+            pcall(vim.fn.timer_stop, timer)
+        end
+        send_reply(chan, id, true, res)
+    end
+    local function collect(_, data)
+        if type(data) == 'table' then
+            for _, line in ipairs(data) do
+                if line ~= '' then
+                    output[#output + 1] = line
+                end
+            end
+        end
+    end
+    -- Its stdout is PIPED, never inherited: this host's stdout is the browser's native
+    -- messaging pipe, the launched browser prints "Opening in existing browser session."
+    -- on handing over, and one stray byte there breaks the protocol for good. So no
+    -- os.execute, and no io.popen.
+    local ok, job = pcall(vim.fn.jobstart, {
+        browser.exe,
+        '--user-data-dir=' .. browser.udd,
+        '--profile-directory=' .. dir,
+        url,
+    }, {
+        -- It may outlive this host: when the running browser has gone, or does not
+        -- answer, the launched one takes its place -- and this host, whose parent was
+        -- that browser, exits, which would kill a job that is not detached.
+        detach = true,
+        stdin = 'null',
+        stdout_buffered = true,
+        stderr_buffered = true,
+        on_stdout = collect,
+        on_stderr = collect,
+        on_exit = function(_, code)
+            if code == EXIT_PROCESS_NOTIFIED then
+                finish({ data = { dir = dir } })
+                return
+            end
+            local said = job_output(output)
+            local why
+            if code == EXIT_PROFILE_IN_USE then
+                why = 'the browser refused it, its profile being in use or locked (exit code 21)'
+            else
+                why = 'the browser did not hand it to the running one (exit code ' .. tostring(code) .. ')'
+            end
+            finish({ error = why .. (said ~= '' and (': ' .. said) or '') })
+        end,
+    })
+    if not ok or type(job) ~= 'number' or job <= 0 then
+        return { error = 'could not start ' .. browser.exe }
+    end
+    -- Past the deadline the launched browser is left running: still running means it
+    -- is waiting on the browser or has become one, and stopping either is not ours.
+    timer = vim.fn.timer_start(PROFILE_OPEN_TIMEOUT_MS, function()
+        finish({ error = 'the browser did not report back within '
+            .. (PROFILE_OPEN_TIMEOUT_MS / 1000) .. ' seconds' })
+    end)
+    return DEFERRED
+end
+
 -- Bytes received from the browser that do not yet make up a whole message.
 local stdin_buffer = ""
 
@@ -521,23 +1080,12 @@ local function respond_to(chan, text)
     else
         status, res = false, req
     end
-    local resp = vim.fn.json_encode({
-        status = status,
-        res = res,
-        id = decoded and type(req) == "table" and req['id'] or nil
-    })
-    -- A write that throws leaves the browser waiting on a reply that never arrives.
-    local written, werr = pcall(write_stdout, chan, resp)
-    if not written then
-        logw("stdout failed: " .. tostring(werr) .. "\n")
+    local id = decoded and type(req) == "table" and req['id'] or nil
+    if status and res == DEFERRED then
+        logw("stdout: deferred " .. tostring(id) .. "\n")
+        return
     end
-    -- Settings are read on every page load, so logging the reply text would grow this
-    -- log by the size of ~/.surfingkeys.js per page.
-    if status and type(res) == "table" and type(res.data) == "string" then
-        logw("stdout: Settings.read " .. #res.data .. " bytes\n")
-    else
-        logw("stdout: " .. resp .. "\n")
-    end
+    send_reply(chan, id, status, res)
 end
 
 function handle_input(id, data)
@@ -551,6 +1099,10 @@ function handle_input(id, data)
         }
     elseif data['command'] == 'Settings.read' then
         return read_settings()
+    elseif data['command'] == 'Profile.list' then
+        return list_profiles()
+    elseif data['command'] == 'Profile.open' then
+        return open_profile(id, data)
     end
 end
 

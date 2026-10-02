@@ -958,6 +958,9 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         mapkey(';i', '#12Open Chrome Inspect', function() {
             tabOpenLink("chrome://inspect/#devices");
         });
+        mapkey('gP', '#8Switch to another browser profile', function() {
+            front.openOmnibar({type: "Profiles"});
+        });
     }
 
     mapkey('X', '#3Restore closed tab', function() {

@@ -539,7 +539,7 @@ Open the omnibar.
 
 ### Parameters
 
-*   `args` **[object][109]** `type` the sub type for the omnibar, which can be `Bookmarks`, `AddBookmark`, `History`, `URLs`, `RecentlyClosed`, `TabURLs`, `Tabs`, `Windows`, `VIMarks`, `SearchEngine`, `Commands`, `OmniQuery` and `UserURLs`.
+*   `args` **[object][109]** `type` the sub type for the omnibar, which can be `Bookmarks`, `AddBookmark`, `History`, `URLs`, `RecentlyClosed`, `TabURLs`, `Tabs`, `Windows`, `VIMarks`, `SearchEngine`, `Commands`, `OmniQuery`, `UserURLs` and, in Chromium, `Profiles` (the browser's profiles, listed and opened through the native messaging host).
 
 ### Examples
 

@@ -12,7 +12,7 @@ This fork adds a command palette, a visual tab switcher, 10 built-in color theme
 
 ### Command palette — <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (macOS) / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> (Windows, Linux)
 
-One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, change theme, open a settings section, disable Surfingkeys on this site, show all keys…). Inside web pages <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> opens it on every platform; the browser-level default on Windows and Linux is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> because Chrome keeps <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for itself there.
+One box for open tabs, history, bookmarks, URLs and web search. Press <kbd>Tab</kbd> for actions on the current tab (copy URL, pin, mute, move to window, switch browser profile, change theme, open a settings section, disable Surfingkeys on this site, show all keys…). Inside web pages <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> opens it on every platform; the browser-level default on Windows and Linux is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> because Chrome keeps <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for itself there.
 
 | Search | Actions (<kbd>Tab</kbd>) |
 |:--:|:--:|
@@ -104,6 +104,7 @@ Surfingkeys does its best to make full use of the keyboard for web browsing, but
 | Vim-like marks | Y | Y | Y |
 | Switch tabs | Y | Y | Y |
 | Windows management | Y | Y | N |
+| Switch browser profile | needs native host (macOS, Linux) | N | N |
 | Commands | Y | Y | Y |
 | Smooth scroll | Y | Y | Y |
 | Session management | Y | Y | Y |
@@ -130,6 +131,7 @@ Surfingkeys does its best to make full use of the keyboard for web browsing, but
 * [Vim-like marks](#vim-like-marks)
 * [Switch tabs](#switch-tabs)
 * [Windows management](#windows-management)
+* [Switch browser profile](#switch-browser-profile)
 * [Commands](#commands)
 * [Smooth scroll](#smooth-scroll)
 * [Session management](#session-management)
@@ -406,6 +408,17 @@ The tabs are displayed in MRU order by default, either in the omnibar or the ove
 `;gt` opens the Omnibar with all tabs not from the current window; you can type some text to filter the tabs, then press `Enter` to gather the filtered tabs into the current window. `;gw` gathers all tabs into the current window.
 
 So to group your tabs into windows, you can use `W` to move one tab to a specified window or use `;gt` to gather filtered tabs into the current window.
+
+## Switch browser profile
+
+`gP` (or `:profile`, or *Switch Profile…* in the command palette) lists the browser's
+profiles. Pick one with <kbd>Enter</kbd> or a click: that profile's window comes to the
+front with Surfingkeys' start page in a new tab, or a new window opens when it has none.
+`:profile work` opens the list with `work` already typed.
+
+An extension cannot see the browser's other profiles, so this needs the
+[native messaging host](src/nvim/server/Readme.md#switching-profiles), on macOS or Linux,
+in a Chromium-based browser. Without it, the list says what is missing.
 
 ## Commands
 

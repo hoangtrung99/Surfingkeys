@@ -365,7 +365,7 @@ function createFront(insert, normal, hints, visual, browser) {
     /**
      * Open the omnibar.
      *
-     * @param {object} args `type` the sub type for the omnibar, which can be `Bookmarks`, `AddBookmark`, `History`, `URLs`, `RecentlyClosed`, `TabURLs`, `Tabs`, `Windows`, `VIMarks`, `SearchEngine`, `Commands`, `OmniQuery` and `UserURLs`.
+     * @param {object} args `type` the sub type for the omnibar, which can be `Bookmarks`, `AddBookmark`, `History`, `URLs`, `RecentlyClosed`, `TabURLs`, `Tabs`, `Windows`, `VIMarks`, `SearchEngine`, `Commands`, `OmniQuery`, `UserURLs` and, in Chromium, `Profiles` (the browser's profiles, listed and opened through the native messaging host).
      * @name Front.openOmnibar
      *
      * @example

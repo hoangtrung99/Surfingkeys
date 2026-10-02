@@ -135,6 +135,58 @@ function readNativeSettings(onReady, onException) {
     }
 }
 
+// Profile switching (gP) goes through the native host: an extension can neither list
+// the browser's other profiles nor open a tab in one, and server.lua can, by starting
+// the browser itself with --profile-directory (see its Profile.open).
+const NATIVE_PROFILES_TIMEOUT = 5000;
+// server.lua answers Profile.open once the browser it started has exited, and gives
+// that 25 seconds. This deadline must outlast it: a shorter one reports "no answer"
+// while the switch is still being decided, and may then happen anyway.
+const NATIVE_OPEN_PROFILE_TIMEOUT = 30000;
+
+// Asks the native host one Profile.* command and calls `done` exactly once, with
+// {data} or {error, kind}. `kind` names the fix the menu points at: "host" when no host
+// can be reached, "update" for a server.lua from before the command existed -- which
+// answers it with no `res` at all.
+function askProfileHost(message, timeout, done) {
+    let settled = false;
+    const abandon = new AbortController();
+    const finish = function(result) {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        // The connection has no deadline of its own: an entry left behind would be
+        // held for the next request to trip over.
+        abandon.abort();
+        done(result);
+    };
+    const timer = setTimeout(function() {
+        finish({error: `the native host did not answer within ${timeout / 1000} seconds`});
+    }, timeout);
+    if (!nativeHost || !nativeHost.request) {
+        finish({error: "Surfingkeys' native messaging host is not set up for this browser", kind: "host"});
+        return;
+    }
+    nativeHost.request(message, {signal: abandon.signal}).then(function(response) {
+        const res = response && response.res;
+        if (response && response.status === false) {
+            // the host threw, and `res` is its message
+            finish({error: typeof res === "string" && res ? res : "the native host failed"});
+        } else if (res && typeof res === "object" && res.error) {
+            finish({error: String(res.error)});
+        } else if (res && typeof res === "object" && "data" in res) {
+            finish({data: res.data});
+        } else {
+            finish({error: "this server.lua cannot switch profiles yet, update it", kind: "update"});
+        }
+    }, function(error) {
+        const reason = (error && error.message ? error.message : String(error)).replace(/\.$/, "");
+        finish({error: `cannot reach Surfingkeys' native messaging host: ${reason}`, kind: "host"});
+    });
+}
+
 function dictFromArray(arry, val) {
     var dict = {};
     arry.forEach(function(h) {
@@ -2358,6 +2410,60 @@ function start(browser) {
 
     self.openIncognito = function(message, sender, sendResponse) {
         chrome.windows.create({"url": message.url, "incognito": true});
+    };
+
+    // The browser's profiles for the Profiles omnibar (ui/profileMenu.js), and the
+    // switch to one. Both answer on every path: the menu shows the error it is handed.
+    function chromiumOnly(message, sendResponse) {
+        if (browser.name === "Chrome") {
+            return false;
+        }
+        _response(message, sendResponse, {error: "switching profiles needs a Chromium-based browser", kind: "browser"});
+        return true;
+    }
+    self.getProfiles = function(message, sender, sendResponse) {
+        if (chromiumOnly(message, sendResponse)) {
+            return;
+        }
+        askProfileHost({command: "Profile.list"}, NATIVE_PROFILES_TIMEOUT, function(reply) {
+            if (reply.error) {
+                _response(message, sendResponse, reply);
+            } else {
+                const profiles = Array.isArray(reply.data) ? reply.data : [];
+                _response(message, sendResponse, {
+                    profiles: profiles.filter((p) => p && typeof p.dir === "string").map((p) => ({
+                        dir: p.dir,
+                        name: typeof p.name === "string" && p.name ? p.name : p.dir,
+                        email: typeof p.email === "string" ? p.email : "",
+                    })),
+                });
+            }
+        });
+    };
+    // Opens Surfingkeys' start page in profile `message.profile`: in that profile's last
+    // active window, which comes forward, or a new one when it has none.
+    //
+    // The page, because the browser opens a tab in an EXISTING window only for a URL it
+    // accepts from a command line: chrome://newtab is dropped there, and with no URL it
+    // always makes a new window. Its address comes from the running extension, as the
+    // store build's id differs from the unpacked one. `?focus` is the marker the page
+    // moves itself to, to take keyboard focus from the address bar; arriving with it,
+    // the page does not move again.
+    self.openProfile = function(message, sender, sendResponse) {
+        if (chromiumOnly(message, sendResponse)) {
+            return;
+        }
+        if (typeof message.profile !== "string" || !message.profile) {
+            _response(message, sendResponse, {error: "no profile was named"});
+            return;
+        }
+        askProfileHost({
+            command: "Profile.open",
+            profile: message.profile,
+            url: chrome.runtime.getURL("pages/newtab.html?focus"),
+        }, NATIVE_OPEN_PROFILE_TIMEOUT, function(reply) {
+            _response(message, sendResponse, reply.error ? reply : {profile: message.profile});
+        });
     };
 
     var userAgent;

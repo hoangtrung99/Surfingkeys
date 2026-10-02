@@ -2697,6 +2697,151 @@ describe('start', () => {
         });
     });
 
+    describe('browser profiles over the native host', () => {
+        const withHost = (request, extra = {}) => ({
+            browser: {nvimServer: {ready: true, instance: Promise.resolve({}), request}, ...extra},
+        });
+        const ask = async (boot, message) => {
+            const {sendResponse} = boot.dispatch(Object.assign({needResponse: true}, message), senderFor(12));
+            await flushPromises();
+            return sendResponse;
+        };
+
+        it('lists the profiles server.lua reads from Local State', async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {data: [
+                {dir: 'Profile 1', name: 'Ann Example (Work)', email: 'ann@example.com'},
+                {dir: 'Default', name: 'Person 1'},
+            ]}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(request).toHaveBeenCalledWith({command: 'Profile.list'}, {signal: expect.anything()});
+            expect(sendResponse).toHaveBeenCalledWith({profiles: [
+                {dir: 'Profile 1', name: 'Ann Example (Work)', email: 'ann@example.com'},
+                {dir: 'Default', name: 'Person 1', email: ''},
+            ]});
+        });
+
+        it('tells the user to update a server.lua that ignores the command', async () => {
+            // an old server.lua answers an unknown command with no res
+            const boot = bootstrap(withHost(jest.fn(() => Promise.resolve({status: true, id: 1}))));
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('update it'), kind: 'update'});
+        });
+
+        it("passes through the host's own refusal", async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {
+                error: 'found no browser data directory whose SingletonLock names process 42',
+            }}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(sendResponse).toHaveBeenCalledWith({
+                error: 'found no browser data directory whose SingletonLock names process 42',
+            });
+        });
+
+        it('passes through a lua error from the host', async () => {
+            const request = jest.fn(() => Promise.resolve({status: false, id: 1, res: 'Vim:E5108: Error executing lua'}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(sendResponse).toHaveBeenCalledWith({error: 'Vim:E5108: Error executing lua'});
+        });
+
+        it('points at the install steps when no host can be reached', async () => {
+            const request = jest.fn(() => Promise.reject(new Error('Specified native messaging host not found.')));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(sendResponse).toHaveBeenCalledWith({
+                error: "cannot reach Surfingkeys' native messaging host: Specified native messaging host not found",
+                kind: 'host',
+            });
+        });
+
+        it('answers with no connection at all', async () => {
+            const boot = bootstrap();
+            const sendResponse = await ask(boot, {action: 'getProfiles'});
+            expect(sendResponse).toHaveBeenCalledWith({error: expect.any(String), kind: 'host'});
+        });
+
+        it('refuses outside Chromium without asking the host', async () => {
+            const request = jest.fn();
+            const boot = bootstrap(withHost(request, {name: 'Firefox'}));
+            for (const action of ['getProfiles', 'openProfile']) {
+                const sendResponse = await ask(boot, {action, profile: 'Default'});
+                expect(sendResponse).toHaveBeenCalledWith({error: expect.stringContaining('Chromium'), kind: 'browser'});
+            }
+            expect(request).not.toHaveBeenCalled();
+        });
+
+        it('gives up on a list after 5 seconds and tells the connection', async () => {
+            jest.useFakeTimers();
+            try {
+                let abandoned = false;
+                const request = jest.fn((message, {signal}) => new Promise(() => {
+                    signal.addEventListener('abort', () => { abandoned = true; });
+                }));
+                const {dispatch} = bootstrap(withHost(request));
+                const {sendResponse} = dispatch({action: 'getProfiles', needResponse: true}, senderFor(12));
+                jest.advanceTimersByTime(4999);
+                expect(sendResponse).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 5 seconds'});
+                expect(abandoned).toBe(true);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it("opens Surfingkeys' start page in the profile, its address from the running extension", async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {data: {dir: 'Profile 1'}}}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'openProfile', profile: 'Profile 1'});
+            expect(boot.chrome.runtime.getURL).toHaveBeenCalledWith('pages/newtab.html?focus');
+            expect(request).toHaveBeenCalledWith({
+                command: 'Profile.open',
+                profile: 'Profile 1',
+                url: boot.chrome.runtime.getURL('pages/newtab.html?focus'),
+            }, {signal: expect.anything()});
+            expect(sendResponse).toHaveBeenCalledWith({profile: 'Profile 1'});
+        });
+
+        it('reports what the browser did when the switch failed', async () => {
+            const request = jest.fn(() => Promise.resolve({status: true, id: 1, res: {
+                error: 'the browser refused it, its profile being in use or locked (exit code 21)',
+            }}));
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'openProfile', profile: 'Default'});
+            expect(sendResponse).toHaveBeenCalledWith({
+                error: 'the browser refused it, its profile being in use or locked (exit code 21)',
+            });
+        });
+
+        it('asks nothing for a request that names no profile', async () => {
+            const request = jest.fn();
+            const boot = bootstrap(withHost(request));
+            const sendResponse = await ask(boot, {action: 'openProfile'});
+            expect(sendResponse).toHaveBeenCalledWith({error: 'no profile was named'});
+            expect(request).not.toHaveBeenCalled();
+        });
+
+        // server.lua waits up to 25 seconds for the browser it started, which itself
+        // waits up to 20 for the running one: a switch still being decided is not "no answer".
+        it('waits out the host for a switch, and gives up after 30 seconds', async () => {
+            jest.useFakeTimers();
+            try {
+                const request = jest.fn(() => new Promise(() => {}));
+                const {dispatch} = bootstrap(withHost(request));
+                const {sendResponse} = dispatch({action: 'openProfile', profile: 'Default', needResponse: true},
+                    senderFor(12));
+                jest.advanceTimersByTime(29999);
+                expect(sendResponse).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(sendResponse).toHaveBeenCalledWith({error: 'the native host did not answer within 30 seconds'});
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+    });
+
     describe('toolbar icon', () => {
         it.each([
             ['disabled', 'icons/48-x.png'],
