@@ -174,7 +174,7 @@ describe('diffSettings', () => {
 });
 
 test.each([
-    ["settings.llm = {apiKey: 'x'}", true],
+    ["const service = {apiKey: 'x'};", true],
     ['const TOKEN = 1;', true],
     ['// my client_secret', true],
     ['password', true],

@@ -76,7 +76,7 @@ export default {
             h('p', {class: 'sk-lead'}, 'Move your settings to another browser, or keep a copy.'),
             h('div', {class: 'sk-card sk-row', dataset: {keywords: 'export save download file'}},
                 h('h3', null, 'Export'),
-                h('p', {class: 'sk-muted'}, 'Saves your settings to a .json file: the settings script, key changes, search engines, sites, proxy and theme. Find and command history and stored LLM credentials are never exported.'),
+                h('p', {class: 'sk-muted'}, 'Saves your settings to a .json file: the settings script, key changes, search engines, sites, proxy and theme. Find and command history are never exported.'),
                 h('p', {class: 'sk-check'}, includeData, h('label', {for: 'backupIncludeData'}, 'Include marks and saved sessions')),
                 secretNote,
                 h('div', {class: 'sk-actions'}, exportButton)),

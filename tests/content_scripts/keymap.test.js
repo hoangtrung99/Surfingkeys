@@ -102,7 +102,6 @@ describe('keys that ask the UI', () => {
         ['H', { action: 'openOmnibar', type: 'TabURLs' }],
         [';x', { action: 'openOmnibar', type: 'CloseTabs' }],
         ['ab', { action: 'openOmnibar', type: 'AddBookmark', extra: { url: PAGE_URL, title: 'Fixture page' } }],
-        ['A', { action: 'openOmnibar', type: 'LLMChat', extra: { url: PAGE_URL } }],
         ['og', { action: 'openOmnibar', type: 'SearchEngine', extra: 'g' }],
         ['od', { action: 'openOmnibar', type: 'SearchEngine', extra: 'd' }],
         [';T', { action: 'openOmnibar', type: 'Themes' }],
@@ -126,6 +125,22 @@ describe('keys that ask the UI', () => {
         h.press(keys);
         expect(uiRequests()).toEqual([expect.objectContaining(request)]);
         expect(requests()).toEqual([]);
+    });
+
+    // the AI chat (A) and the AI translation (;t, ;lt, visual t) were removed with
+    // their keys
+    test('A asks for nothing', () => {
+        h.press('A');
+        expect(uiRequests()).toEqual([]);
+        expect(requests()).toEqual([]);
+    });
+
+    test('? lists no AI chat or translation keys', () => {
+        h.press('?');
+        const [usage] = uiRequests();
+        const words = usage.metas.map((m) => m.word);
+        ['A', ';t', ';lt'].forEach((k) => expect(words).not.toContain(k));
+        expect(usage.metas.filter((m) => /llm/i.test([].concat(m.annotation).join(' ')))).toEqual([]);
     });
 
     test('? shows the usage of every mode, built-in and fork mappings alike', () => {

@@ -150,19 +150,20 @@ describe('themeCss', () => {
 });
 
 describe('themeTokens and aceCss', () => {
-    // sha256 of themeCss(PALETTES[id]) before the token block and the Ace rules
-    // became functions of their own: the frontend stylesheet must not change by a byte.
+    // sha256 of themeCss(PALETTES[id]), recorded when the token block and the Ace
+    // rules became functions of their own and updated only for deliberate changes
+    // since: the frontend stylesheet must not change by a byte by accident.
     const BEFORE = {
-        mocha: 'd5d6c1d27177f76b6985d51c852d5c9ec2b9d2f568b6349171dfa2e9dd4ada45',
-        tokyonight: '604961550022af6d3ef81048b3cfe75856b3f647637ebab27d1110a5d4b897b2',
-        rosepine: 'ab7d349e2b1b40745b70210136f5688c5d6273badedc5aece6dfb9524d70305f',
-        nord: 'a9c8b9f8015668e045be5f4d9921655376d405e027fe142b4708d25d23d6e476',
-        dracula: '93dfdd59bcf734939ff0c05c3030c79fc7b5178c5e1fce0ab7d559781b3728f9',
-        gruvbox: '8ea66919eb0f4ec3289e52e7ae97d07c14a9b705ea70b3c8c4687de9db016d52',
-        everforest: 'c78fdb1c00c50b4b1a80020cfb96e05a691f931beb9d219b71dc951d64a6b710',
-        latte: '82b273294cadee4c514afe8c38b634b5d181f094b775679234038637a9c28669',
-        github: '1df176944d977263a8429f3d31d442320d8ca84bf6716e96433da77ab4d2ddab',
-        dawn: '33bf5b47664fef4a01cbc2c62761a09a999478d1f0fc74d0f20011a55ac4a8d2',
+        mocha: '6da82494dff10ddfc4f76919294051a4242c844d3ee004db70529239709f37d6',
+        tokyonight: 'e9bce2ffad93156266de1d9d5df92b3bc2904eaec69150ef4256124b5d472c10',
+        rosepine: 'dfb29616eaabb0064ac2853e9683166212e0d0fbb91e3fbb810b04203ad917c0',
+        nord: '8eaadd1c2b7262a01e80baf79b004ca65ad807e9d21d937a46a979015e6a34a6',
+        dracula: '06f3c1261eb8679265f4ec657aa8172a3d85e6fdee143902a5dc37c9686cbc19',
+        gruvbox: '23917509bbdab70793b9dc801fac40670cd1dea7c348fa0a5a2ac636a37660e5',
+        everforest: '4a7089fa13377e0a14eb52ad4423c987c523c33f09042f4e469859a48878b116',
+        latte: 'aaa01cafe5767b59b2b82c6f8147c586fbbaa5293427d4b51cc4b9df64d9c26b',
+        github: 'ace120a6ce5640199c0257f3c988be34646ebfe8b8e435b423bc5d6874b642a4',
+        dawn: 'd565fc2021452e44834a46f89fd989bb899765880b7f36ea8b8ff47b98346b09',
     };
 
     test('every theme has a recorded stylesheet', () => {

@@ -4,7 +4,7 @@
 
 ## About this fork
 
-This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, switching browser profiles with <kbd>gP</kbd>, and your other profiles' tabs in the palette. Everything else is upstream Surfingkeys.
+This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, switching browser profiles with <kbd>gP</kbd>, and your other profiles' tabs in the palette. It leaves out upstream's AI chat; everything else is upstream Surfingkeys.
 
 **Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
 
@@ -166,7 +166,6 @@ Surfingkeys does its best to make full use of the keyboard for web browsing, but
 * [PDF viewer](#pdf-viewer)
 * [Edit your own settings](#edit-your-own-settings)
 * [Load settings from a local file](#load-settings-from-a-local-file)
-* [Chat with LLM](#chat-with-llm)
 * [License](#license)
 
 ## Feature list
@@ -187,7 +186,6 @@ Surfingkeys does its best to make full use of the keyboard for web browsing, but
 * Rich hints for keystroke
 * Everything in Surfingkeys works for PDFs
 * Regional Hints mode
-* Chat with LLM
 
 ## Quick start
 
@@ -263,7 +261,6 @@ Press `L` to enter regional Hints mode by picking a visually large element. Ther
 * `ct` to copy text from target element
 * `ch` to copy HTML from target element
 * `d` to delete target element
-* `l` to chat with AI about the text of the element
 * `p` to select the parent element of the target element
 
 [Demo on YouTube](https://www.youtube.com/watch?v=pFPOzAZDO38)
@@ -283,7 +280,6 @@ All mappings added with `imapkey` work in this mode.
 * `Alt-f` to move the cursor forward 1 word.
 * `Alt-w` to delete a word backwards.
 * `Alt-d` to delete a word forwards.
-* `Ctrl-g` to correct the grammar of the current input with LLM.
 
 `imap` and `iunmap` work for insert mode.
 
@@ -738,20 +734,6 @@ The same field also takes an `http`/`https` URL, or a path like
 `/home/you/.surfingkeys.js` if you have granted the extension **Allow access to file
 URLs**.
 
-## Chat with LLM
-
-Press `A` to open a chat popup and talk to an LLM about the page you are on. Ollama,
-Bedrock and any OpenAI-API-compatible service (SiliconFlow, OpenRouter, DeepSeek, Gemini, ...)
-are supported once you put your credentials in `settings.llm`. The chat can also read your
-tabs, history, bookmarks and other pages through browser tools, and every one of those calls
-is confirmed by you before it runs. `A` works in visual mode and from Regional Hints mode
-(`L` then `l`) to chat about just the text you picked, and `Ctrl-g` in insert mode corrects the
-grammar of the current input.
-
-See [docs/LLM.md](docs/LLM.md) for provider setup, the full list of browser tools, how the
-confirmation prompts and permissions work, custom system prompts, and Ollama troubleshooting.
-
-See a short demo [here](https://youtu.be/bJo2P7QhIY0).
 ## API Documentation
 
 > The API documentation is currently a work in progress.

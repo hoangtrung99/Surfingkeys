@@ -1,6 +1,5 @@
 // The Command Palette in the real frontend (frontend.html + frontend.js in jsdom):
 // what the page can post to it must not act, and the palette defects fixed with that.
-jest.mock('marked', () => ({ marked: { parse: (s) => s, setOptions: () => {}, use: () => {} } }));
 const fs = require('fs');
 const path = require('path');
 

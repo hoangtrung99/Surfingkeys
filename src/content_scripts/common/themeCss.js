@@ -265,10 +265,6 @@ ${PANELS} {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* LLM chat (A): Surfingkeys gives it 90vh and its own keys */
-#sk_omnibar #sk_omnibarSearchResult.llmChat { max-height: calc(86vh - 120px); }
-#sk_omnibar:has(#sk_omnibarSearchResult.llmChat)::after { content: none; display: none; }
-
 /* windows (W) */
 /* one row like the others: the --sel fill marks the focused window.
    border: 0 on both states, or frontend.css brings back its 2px borders */

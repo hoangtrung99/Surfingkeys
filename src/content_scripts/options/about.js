@@ -17,7 +17,7 @@ export const RESET_CLEARS = [
     'Marks and saved sessions',
     'Find and command history',
     `The theme (back to ${PALETTES[DEFAULT_THEME].name})`,
-    'LLM provider settings saved from your script',
+    'AI chat provider settings saved by earlier versions',
 ];
 
 function link(href, text) {

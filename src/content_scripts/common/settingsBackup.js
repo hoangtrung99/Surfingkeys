@@ -34,11 +34,12 @@ const DATA_TYPES = {
 };
 export const SETTINGS_KEYS = Object.keys(SETTINGS_TYPES);
 export const DATA_KEYS = Object.keys(DATA_TYPES);
-// Never exported and never imported: stored LLM credentials (_llmProviderConfig can
-// hold Bedrock keys), the find and command histories (D3), and bookkeeping.
 // the modes the background sets the browser's proxy by (background/chrome.js
 // _applyProxySettings, which writes the mode into the PAC script it builds)
 export const PROXY_MODES = ['always', 'byhost', 'bypass', 'clear', 'direct', 'system'];
+// Never exported and never imported: the credentials earlier versions stored for
+// their AI chat (_llmProviderConfig can hold Bedrock keys, and is still in storage
+// wherever it was written), the find and command histories (D3), and bookkeeping.
 export const NEVER_KEYS = ['_llmProviderConfig', 'findHistory', 'cmdHistory', 'lastKeys', 'savedAt', 'logLevels'];
 
 const TYPE_NAMES = {

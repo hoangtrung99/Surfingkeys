@@ -99,7 +99,7 @@ describe('export', () => {
 
     test('warns when the script looks like it holds a secret', () => {
         boot({hash: '#backup'});
-        loadSettings({snippets: "settings.llm = {openai: {apiKey: 'sk-1'}};"});
+        loadSettings({snippets: "const service = {apiKey: 'sk-1'};"});
         expect(document.getElementById('backupSecretNote').hidden).toBe(false);
         loadSettings({snippets: "api.map('gt', 'T');"});
         expect(document.getElementById('backupSecretNote').hidden).toBe(true);

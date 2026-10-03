@@ -64,31 +64,8 @@ const runtime = (function() {
             clickableSelector: "",
             editableSelector: "div.CodeMirror-scroll,div.ace_content",
             cursorAtEndOfInput: true,
-            defaultLLMProvider: "ollama",
             defaultSearchEngine: "g",
             defaultVoice: "Daniel",
-            // These three only ever read the page the user opened the chat on and
-            // take no destination, so they have nowhere to send anything and asking
-            // about them would be friction on the common case. `search_page` and
-            // `list_page_links` are served from the same snapshot as `read_page`
-            // and report strictly less of it, so confirming them while the whole
-            // page goes unasked would teach the user to approve rather than read.
-            // Every other tool reaches beyond that page, so it is confirmed until
-            // listed here.
-            llmAllowedTools: ["read_page", "search_page", "list_page_links"],
-            // How many tabs the LLM chat may hold open at once. Reaching it does not
-            // fail a call: the next `open_url` points the OLDEST of those tabs at the
-            // new address instead of opening one more, even when the model has not
-            // read that page to the end -- so a long conversation costs a bounded
-            // number of tabs, and the price of the bound is that a page can be taken
-            // away before it was finished with. A tab the user opened is never counted
-            // and never taken; one the chat opened and the user then navigated
-            // somewhere of their own is likewise never taken, but goes on counting,
-            // since it sits on the strip and in the chat's tab group because the chat
-            // put it there. llmtools.js `DEFAULT_MAX_LLM_TABS` carries this same number
-            // for a setting that is not a number at all.
-            llmMaxTabs: 5,
-            llmTranslateTarget: "auto",
             editableBodyCare: true,
             enableAutoFocus: true,
             enableEmojiInsertion: false,
@@ -148,17 +125,6 @@ const runtime = (function() {
 
     self.on = function(message, cb) {
         _handlers[message] = cb;
-    };
-    self.bookMessage = function(message, cb) {
-        if (_handlers[message]) {
-            return false;
-        } else {
-            _handlers[message] = cb;
-            return true;
-        }
-    };
-    self.releaseMessage = function(message) {
-        delete _handlers[message];
     };
 
     chrome.runtime.onMessage.addListener(function(msg, sender, response) {

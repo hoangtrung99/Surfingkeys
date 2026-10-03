@@ -1,7 +1,6 @@
 // The browser a content script or the frontend expects, as far as jsdom can be
 // made to provide it: a Chrome user agent, the DOM pieces jsdom leaves out, a
-// `marked` jest can load, a system clipboard, and a chrome.runtime whose
-// answers the test decides.
+// system clipboard, and a chrome.runtime whose answers the test decides.
 //
 // Install it once per test FILE and before the first src module is required:
 // several modules read these at import time (keyboardUtils.js takes the platform
@@ -70,8 +69,6 @@ function installClipboard() {
  * - document.scrollingElement: missing in jsdom; marks and every clipboard
  *   action read its scroll offsets.
  * - document.execCommand: see installClipboard().
- * - marked: ships as ESM, which jest does not load; the frontend (llmchat.js)
- *   imports it.
  *
  * Returns the clipboard board ({text}).
  */
@@ -93,7 +90,6 @@ export function installJsdomShims({ userAgent = CHROME_UA } = {}) {
         configurable: true,
         get() { return this.documentElement; },
     });
-    jest.doMock('marked', () => ({ marked: { parse: (s) => s, setOptions: () => {}, use: () => {} } }));
     return installClipboard();
 }
 

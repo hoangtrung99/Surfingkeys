@@ -13,7 +13,7 @@ Vim-style keys for the web, plus a command palette, a visual tab switcher and 10
 
 **Description**:
 
-Surfingkeys Palette is a fork of Surfingkeys, the keyboard-driven browser extension by brook hong, with a command palette, a visual tab switcher, built-in themes and a redesigned settings page. Everything Surfingkeys does is still here.
+Surfingkeys Palette is a fork of Surfingkeys, the keyboard-driven browser extension by brook hong, with a command palette, a visual tab switcher, built-in themes and a redesigned settings page. Everything Surfingkeys does is still here, except its AI chat.
 
 COMMAND PALETTE (Cmd+Shift+P on macOS, Ctrl+Shift+K on Windows and Linux)
 One box for open tabs, history, bookmarks, URLs and web search. Press Tab for actions on the current tab: copy the URL, pin, mute, move to another window, change the theme, open a settings section, turn the extension off for a site, show every key. With the optional native helper (macOS, Linux), the tabs open in your browser's other profiles are listed too, under each profile's name.

@@ -72,7 +72,6 @@ Surfingkeys尽量让用户使用键盘进行网页浏览，但有些限制是Goo
 * [PDF阅读器](#pdf阅读器)
 * [配置参考](#配置参考)
 * [从本地文件加载设置](#从本地文件加载设置)
-* [大语言模型对话](#大语言模型对话)
 * [License](#license)
 
 ## 功能特性
@@ -93,7 +92,6 @@ Surfingkeys尽量让用户使用键盘进行网页浏览，但有些限制是Goo
 * 按键实时提示
 * 所有按键对PDF适用
 * Regional Hints mode
-* 大语言模型对话
 
 ## 快速上手
 
@@ -169,7 +167,6 @@ Surfingkeys有三种模式：normal，visual和insert。
 * `ct` 复制该大块元素的文本
 * `ch` 复制该大块元素的HTML
 * `d` 删除该大块元素
-* `l` 与大语言模型讨论选中文本
 * `p` 选择目标元素的父元素
 
 [Demo on YouTube](https://www.youtube.com/watch?v=pFPOzAZDO38)
@@ -188,7 +185,6 @@ Surfingkeys有三种模式：normal，visual和insert。
 * `Alt-f` 移动光标到前一个词。
 * `Alt-w` 往后删除一个词。
 * `Alt-d` 往前删除一个词。
-* `Ctrl-g` 用大语言模型矫正当前输入框的语法。
 
 `imap` 和 `iunmap`：
 
@@ -627,14 +623,6 @@ Surfingkeys默认使用[这个markdown分析器](https://github.com/chjj/marked)
 如果文件读取失败，上一次成功读取的内容会继续生效，设置页面会提示具体的错误原因。
 
 同一个字段也可以填`http`/`https`的URL，或者像`/home/you/.surfingkeys.js`这样的路径（前提是你已经给了这个扩展**访问文件网址**的权限）。
-
-## 大语言模型对话
-
-按`A`可以调出对话窗口，与大语言模型讨论你正在浏览的页面。只要在`settings.llm`里配置好密钥，就可以使用Ollama、Bedrock，以及任何兼容OpenAI API的服务（SiliconFlow、OpenRouter、DeepSeek、Gemini等）。对话还可以通过浏览器工具读取你的标签页、历史记录、书签等内容，每一次这样的调用都会先让你确认。`A`在Visual mode下以及Regional Hints mode（`L`然后`l`）下也能使用，只针对你选中的文本进行对话；在Insert mode下按`Ctrl-g`可以矫正当前输入框的语法。
-
-详细的服务商配置、完整的浏览器工具列表、确认提示和权限的工作方式、自定义系统提示词，以及Ollama故障排查，请参考[docs/LLM.md](docs/LLM.md)（英文文档）。
-
-可以在[这里](https://youtu.be/bJo2P7QhIY0)看一个简短的演示视频。
 
 ## API文档
 

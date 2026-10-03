@@ -2,7 +2,6 @@ import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import Mode from './mode';
 import KeyboardUtils from './keyboardUtils';
 import Trie from './trie';
-import toMarkdown from './pageMarkdown.js';
 import {
     createElementWithContent,
     dispatchMouseEvent,
@@ -22,7 +21,6 @@ import {
     isEditable,
     isElementClickable,
     isElementDrawn,
-    openOmnibar,
     refreshHints,
     setSanitizedContent,
 } from './utils.js';
@@ -103,17 +101,6 @@ kbd {
         feature_group: 17,
         code: function() {
             overlay.link.remove();
-            self.exit();
-        }
-    });
-
-    self.mappings.add("l", {
-        annotation: "learn more about target element",
-        feature_group: 17,
-        code: function() {
-            // the element the user picked, which `read_page` serves in place of the
-            // whole page -- as Markdown, so the links and images inside it survive
-            openOmnibar({type: "LLMChat", extra: {picked: toMarkdown(overlay.link)}});
             self.exit();
         }
     });

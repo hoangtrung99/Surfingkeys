@@ -15,7 +15,6 @@ import {
     tabOpenLink,
 } from './common/utils.js';
 import { RUNTIME, dispatchSKEvent, runtime } from './common/runtime.js';
-import toMarkdown from './common/pageMarkdown.js';
 import createUiHost from './uiframe.js';
 
 function createFront(insert, normal, hints, visual, browser) {
@@ -391,10 +390,6 @@ function createFront(insert, normal, hints, visual, browser) {
     self.openOmnibar = function(args) {
         args.action = 'openOmnibar';
         _userURLsHasCustomOnEnter = false;
-        if (args.type === "LLMChat") {
-            args.extra = args.extra || {};
-            args.extra.url = window.location.href.replace(/\#[^\#]*$/, '');
-        }
         if (args._hasCustomOnEnter) {
             _userURLsHasCustomOnEnter = true;
             delete args._hasCustomOnEnter;
@@ -720,59 +715,10 @@ function createFront(insert, normal, hints, visual, browser) {
 
     /*
      * The words on the page, for the completers that count them -- the omnibar's
-     * and the editor's. They split on non-word characters and rank what is left, so
-     * this stays plain text: Markdown would feed them URL fragments and punctuation
-     * as if those were words the user might want to type.
+     * and the editor's. They split on non-word characters and rank what is left.
      */
     _actions["getPageText"] = function(response) {
         return document.body.innerText;
-    };
-
-    /*
-     * The page as Markdown, for the LLM chat's `read_page` -- see pageMarkdown.js
-     * for why a model is handed that rather than text.
-     */
-    _actions["getPageMarkdown"] = function(response) {
-        return toMarkdown(document.body);
-    };
-
-    /*
-     * The same Markdown, for a chat that is NOT in this tab: the LLM chat's
-     * `read_tab`.
-     *
-     * A second door is needed because the first one is this tab's frontend asking
-     * its own content script over postMessage, and a chat in another tab cannot
-     * reach that far. This one arrives from the background, the only place that can
-     * address a tab it does not live in, and it is sent to frame 0 alone -- so the
-     * top document answers and no iframe answers over it.
-     *
-     * The reply is synchronous by necessity: runtime.js never returns true from its
-     * message listener, so the channel is closed the moment this returns and a
-     * handler that answered later would answer nobody. A conversion that throws is
-     * reported rather than left silent, since silence reaches the model as a
-     * timeout it cannot act on.
-     */
-    runtime.on('getTabMarkdown', function(msg, sender, response) {
-        try {
-            response({markdown: document.body ? toMarkdown(document.body) : ""});
-        } catch (e) {
-            response({error: e.message});
-        }
-    });
-
-    /*
-     * Point the user at a passage on the page, for the LLM chat's
-     * `highlight_on_page`: the answer says what the page says, this says where it
-     * says it. The marks are the ones `/` leaves behind, so `n` walks them and Esc
-     * clears them, and nothing here enters visual mode -- the omnibar still has the
-     * focus while the chat is open.
-     *
-     * Answers with a count rather than a boolean: a query that matched nothing is
-     * something the model has to be told, since it will otherwise report that it
-     * highlighted a phrase the page does not contain.
-     */
-    _actions["highlightOnPage"] = function(message) {
-        return { count: visual.highlightMatches(message.query) };
     };
 
     var _pendingQuery;
