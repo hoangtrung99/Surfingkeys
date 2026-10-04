@@ -5,7 +5,9 @@ name: Release
 # - push a v* tag: the release takes its title and notes from the tag's message
 #   (git tag -a); a lightweight tag gets GitHub's generated notes instead.
 # - Run workflow (Actions tab) with a new tag name: the tag is created on the
-#   commit this run built, with the title and notes given there.
+#   commit this run built. Title and notes come from the inputs, else from
+#   .github/release-notes/<tag>.md (title on the first line, then a blank line,
+#   then the notes), else the tag and GitHub's generated notes.
 
 on:
   push:
@@ -56,9 +58,15 @@ jobs:
         asset="surfingkeys-palette-$TAG.zip"
         cp dist/production/chrome/sk.zip "$asset"
         if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-          set -- --target "$GITHUB_SHA" --title "${TITLE:-$TAG}"
+          notes_file=".github/release-notes/$TAG.md"
           if [ -n "$NOTES" ]; then
             printf '%s\n' "$NOTES" > notes.md
+          elif [ -f "$notes_file" ]; then
+            [ -n "$TITLE" ] || TITLE="$(head -n 1 "$notes_file")"
+            sed '1d' "$notes_file" | sed '/./,$!d' > notes.md
+          fi
+          set -- --target "$GITHUB_SHA" --title "${TITLE:-$TAG}"
+          if [ -s notes.md ]; then
             set -- "$@" --notes-file notes.md
           else
             set -- "$@" --generate-notes
