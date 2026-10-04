@@ -209,7 +209,7 @@ describe('profile menu', () => {
 
     test.each([
         ['host', 'cannot reach Surfingkeys\' native messaging host: Specified native messaging host not found',
-            'Readme.md#switching-profiles'],
+            'Readme.md#quick-install-on-macos-and-linux'],
         ['update', 'this server.lua cannot switch profiles yet, update it', 'server/server.lua'],
     ])('with no list (%s), it says why and links the fix', (kind, error, href) => {
         openWith({ error, kind });

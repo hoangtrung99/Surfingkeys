@@ -10,6 +10,23 @@ This native messaging host serves four features:
 * [the tabs of the browser's other profiles](#other-profiles-tabs-in-the-palette) in
   the command palette (the same browsers and systems), for the same reason.
 
+## Quick install on macOS and Linux
+
+1. Install neovim (`brew install neovim` on macOS, your package manager's `neovim`
+   on Linux).
+1. Download `surfingkeys-native-host-<version>.zip` from the fork's
+   [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), next to the
+   extension's zip, and unzip it.
+1. Run `sh install.sh` in the unzipped folder. It copies `server.lua` and
+   `start.sh` to `~/.Surfingkeys_NativeMessagingHosts/` and writes
+   `surfingkeys.json` into the `NativeMessagingHosts` folder of every
+   Chromium-based browser it finds (Helium, Chrome, Chromium, Brave, Edge,
+   Vivaldi, Arc).
+1. Quit the browser completely and open it again: Surfingkeys does not try the
+   host again until it restarts.
+
+The sections below do the same by hand, and cover Windows and Firefox.
+
 ## Installation under Windows
 
 **Note: Please update the paths when creating those files, in below instructions, I'm putting those files under `C:\Users\brook\.Surfingkeys_NativeMessagingHosts\` and `nvim.exe` under `d:\tools\Neovim\bin\`.**

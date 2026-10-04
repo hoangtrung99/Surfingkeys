@@ -7,7 +7,7 @@
 import { RUNTIME } from '../common/runtime.js';
 import { getBrowserName } from '../common/utils.js';
 
-const README = 'https://github.com/hoangtrung99/Surfingkeys/blob/master/src/nvim/server/Readme.md#switching-profiles';
+const README = 'https://github.com/hoangtrung99/Surfingkeys/blob/master/src/nvim/server/Readme.md#quick-install-on-macos-and-linux';
 const SERVER_LUA = 'https://github.com/hoangtrung99/Surfingkeys/blob/master/src/nvim/server/server.lua';
 
 // "jose" finds "José" and "duc" finds "Đức" (đ does not decompose)

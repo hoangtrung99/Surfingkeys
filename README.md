@@ -6,7 +6,7 @@
 
 This fork adds a command palette, a visual tab switcher, 10 built-in color themes (plus an Auto theme that follows the system's light/dark mode), a redesigned settings page, a welcome page, a quick-controls popup, a new tab page with your bookmarks bar, switching browser profiles with <kbd>gP</kbd>, and your other profiles' tabs in the palette. It leaves out upstream's AI chat; everything else is upstream Surfingkeys.
 
-**Install:** download the `.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…).
+**Install:** download `surfingkeys-palette-<version>.zip` from [Releases](https://github.com/hoangtrung99/Surfingkeys/releases), unzip it, open `chrome://extensions`, turn on *Developer mode* and click *Load unpacked* on the unzipped folder. Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Helium…). Switching profiles (<kbd>gP</kbd>) and other profiles' tabs also need the native host: install neovim, download `surfingkeys-native-host-<version>.zip` from the same release, unzip it, run `sh install.sh` in it, and restart the browser (macOS and Linux).
 
 **Guide:** [an interactive handbook, in English and Vietnamese](https://claude.ai/artifact/FGCfEYQyHM6m4ywGB8xV2j): a keyboard you can try in the page, the modes, a searchable key list, the fork's pages, install steps and config recipes.
 

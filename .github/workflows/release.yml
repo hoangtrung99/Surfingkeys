@@ -1,86 +1,96 @@
 name: Release
 
-# Builds the Chromium package and publishes it as a release, attached as
-# surfingkeys-palette-<tag>.zip. Two ways in:
-# - push a v* tag: the release takes its title and notes from the tag's message
-#   (git tag -a); a lightweight tag gets GitHub's generated notes instead.
-# - Run workflow (Actions tab) with a new tag name: the tag is created on the
-#   commit this run built. Title and notes come from the inputs, else from
-#   .github/release-notes/<tag>.md (title on the first line, then a blank line,
-#   then the notes), else the tag and GitHub's generated notes.
+# Every push to master publishes a release with two downloads: the Chromium
+# package (surfingkeys-palette-<tag>.zip) and the native messaging host with its
+# installer (surfingkeys-native-host-<tag>.zip). The tag is the next
+# v<package.json version>-palette.N. The notes are .github/release-notes/<tag>.md
+# when that file exists (title on the first line, a blank line, then the notes),
+# else the commits since the previous release. Run workflow (Actions tab) retries
+# a push whose release failed.
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - master
   workflow_dispatch:
-    inputs:
-      tag:
-        description: New tag to release, e.g. v1.19.2-palette.5
-        required: true
-      title:
-        description: Release title (the tag when empty)
-        required: false
-      notes:
-        description: Release notes in Markdown (generated when empty)
-        required: false
 
 permissions:
   contents: write
+
+# One run at a time: two runs side by side would both pick the same next number.
+# A run waiting here starts only after the one ahead has created its tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: next tag
+      id: tag
+      run: |
+        git fetch --force --tags origin
+        released="$(git tag --points-at HEAD -l 'v*')"
+        if [ -n "$released" ]; then
+          echo "this commit is already released as $released"
+          echo "skip=1" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        version="$(node -p "require('./package.json').version")"
+        last="$(git tag -l "v$version-palette.*" | sed "s/^v$version-palette\.//" | grep -E '^[0-9]+$' | sort -n | tail -n 1)"
+        echo "tag=v$version-palette.$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+        echo "prev=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
     - uses: actions/setup-node@v4
+      if: steps.tag.outputs.skip != '1'
       with:
         node-version: 22.x
     - name: npm install and build
+      if: steps.tag.outputs.skip != '1'
       run: |
         npm install
         npm run build
       env:
         CI: true
     - name: publish
+      if: steps.tag.outputs.skip != '1'
       env:
         GH_TOKEN: ${{ github.token }}
-        # inputs reach the script only through the environment: written into
-        # the script itself, a crafted title or note would run as shell code
-        TAG: ${{ inputs.tag || github.ref_name }}
-        TITLE: ${{ inputs.title }}
-        NOTES: ${{ inputs.notes }}
+        TAG: ${{ steps.tag.outputs.tag }}
+        PREV: ${{ steps.tag.outputs.prev }}
       run: |
-        if ! printf '%s' "$TAG" | grep -Eq '^v[0-9A-Za-z._-]+$'; then
-          echo "not a release tag: $TAG" >&2
-          exit 1
-        fi
-        asset="surfingkeys-palette-$TAG.zip"
-        cp dist/production/chrome/sk.zip "$asset"
-        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-          notes_file=".github/release-notes/$TAG.md"
-          if [ -n "$NOTES" ]; then
-            printf '%s\n' "$NOTES" > notes.md
-          elif [ -f "$notes_file" ]; then
-            [ -n "$TITLE" ] || TITLE="$(head -n 1 "$notes_file")"
-            sed '1d' "$notes_file" | sed '/./,$!d' > notes.md
-          fi
-          set -- --target "$GITHUB_SHA" --title "${TITLE:-$TAG}"
-          if [ -s notes.md ]; then
-            set -- "$@" --notes-file notes.md
-          else
-            set -- "$@" --generate-notes
-          fi
+        cp dist/production/chrome/sk.zip "surfingkeys-palette-$TAG.zip"
+
+        host=surfingkeys-native-host
+        mkdir "$host"
+        cp src/nvim/server/server.lua src/nvim/server/start.sh src/nvim/server/install.sh "$host/"
+        chmod +x "$host/start.sh" "$host/install.sh"
+        zip -qr "$host-$TAG.zip" "$host"
+
+        notes_file=".github/release-notes/$TAG.md"
+        if [ -f "$notes_file" ]; then
+          title="$(head -n 1 "$notes_file")"
+          sed '1d' "$notes_file" | sed '/./,$!d' > notes.md
         else
-          # checkout fetches the tag as a bare ref: fetch the tag object itself,
-          # or an annotated tag reads as lightweight and its notes are lost
-          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
-          if [ "$(git cat-file -t "$TAG")" = tag ]; then
-            title="$(git tag -l --format='%(contents:subject)' "$TAG")"
-            git tag -l --format='%(contents:body)' "$TAG" > notes.md
-            set -- --verify-tag --title "${title:-$TAG}" --notes-file notes.md
-          else
-            set -- --verify-tag --title "$TAG" --generate-notes
-          fi
+          title="$TAG"
+          {
+            echo "### Changes"
+            if [ -n "$PREV" ]; then
+              git log --no-merges --format='- %s (%h)' "$PREV..HEAD"
+            else
+              git log --no-merges --format='- %s (%h)' -n 30
+            fi
+            echo
+            echo "### Install"
+            echo "1. Download \`surfingkeys-palette-$TAG.zip\`, unzip it, open \`chrome://extensions\`, turn on **Developer mode** and click **Load unpacked** on the folder (or replace the folder of an existing install and click **Reload**)."
+            echo "2. For switching profiles (\`gP\`) and other profiles' tabs in the palette: install neovim, download \`$host-$TAG.zip\`, unzip it and run \`sh install.sh\` in it, then quit and reopen the browser."
+          } > notes.md
         fi
-        gh release create "$TAG" "$asset" "$@"
+        if [ -n "$PREV" ]; then
+          printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$PREV" "$TAG" >> notes.md
+        fi
+        gh release create "$TAG" "surfingkeys-palette-$TAG.zip" "$host-$TAG.zip" \
+          --target "$GITHUB_SHA" --title "${title:-$TAG}" --notes-file notes.md
