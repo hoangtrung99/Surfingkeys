@@ -1,0 +1,45 @@
+name: Release
+
+# Pushing a v* tag builds the Chromium package and publishes it as a release.
+# The release takes its title and notes from the tag's message (git tag -a), so
+# write them there; a lightweight tag gets GitHub's generated notes instead.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22.x
+    - name: npm install and build
+      run: |
+        npm install
+        npm run build
+      env:
+        CI: true
+    - name: publish
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        # checkout fetches the tag as a bare ref: fetch the tag object itself,
+        # or an annotated tag reads as lightweight and its notes are lost
+        git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+        asset="surfingkeys-palette-$TAG.zip"
+        cp dist/production/chrome/sk.zip "$asset"
+        if [ "$(git cat-file -t "$TAG")" = tag ]; then
+          title="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          git tag -l --format='%(contents:body)' "$TAG" > notes.md
+          gh release create "$TAG" "$asset" --verify-tag --title "${title:-$TAG}" --notes-file notes.md
+        else
+          gh release create "$TAG" "$asset" --verify-tag --title "$TAG" --generate-notes
+        fi
