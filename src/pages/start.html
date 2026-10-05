@@ -29,6 +29,7 @@
 * `ob` to open Baidu Search.
 * `t` to open URL.
 * `;e` to edit Settings.
+* [New tab page](options.html#newtab): your bookmarks bar and top sites, with Surfingkeys' keys, on every new tab (Helium) or when the browser starts.
 * `?` to find more shortcuts.
 
 ## [Welcome: the palette, the switcher and themes](#welcome)
@@ -63,6 +64,12 @@
                     <button type="button" class="sk_button sk_primary" id="fixShortcuts">Fix in browser</button>
                 </div>
                 <p class="sk_try" id="tryIt"></p>
+                <!-- shown by welcome.js in the builds that ship the page -->
+                <article class="sk_card sk_card_wide" id="welcomeNewTab" aria-labelledby="newTabTitle" hidden>
+                    <h2 id="newTabTitle">New tab page</h2>
+                    <p>Also in this build: a start page with your bookmarks bar, its folders opening as dropdowns, and your top sites, where Surfingkeys' keys work the moment it opens. Make it every new tab (in Helium), open it when the browser starts, or both.</p>
+                    <p><a class="sk_link" href="options.html#newtab">Set it up in Settings</a></p>
+                </article>
                 <p><a class="sk_link" href="start.html">Show the quick guide</a></p>
                 <p id="welcomeStatus" class="sk_sr_only" role="status" aria-live="polite"></p>
             </section>

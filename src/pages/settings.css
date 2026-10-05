@@ -262,6 +262,21 @@ div.pressedKey kbd.sk-keyselected { background: var(--sel); }
 .sk-keyhints li { margin: 2px 0; }
 .sk-keyhints .sk-keywarn { font-weight: 600; }
 
+/* ---------- New tab page ---------- */
+.sk-ntp-intro { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; margin: 0 0 20px; }
+.sk-ntp-intro .sk-lead { flex: 1 1 320px; margin: 0; }
+.sk-ntp-steps > li { margin: 0 0 10px; }
+.sk-ntp-steps > li:last-child { margin-bottom: 0; }
+.sk-ntp-steps .sk-actions { margin-top: 6px; }
+.sk-ntp-steps code { white-space: nowrap; }
+.sk-ntp-note p:last-child { margin-bottom: 0; }
+/* the page's address, whole on one click, with its Copy button */
+.sk-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 0; }
+.sk-address code {
+  flex: 1 1 260px; min-width: 0; padding: 6px 10px; border-radius: 8px;
+  background: var(--fill); font-size: 13px; white-space: normal; overflow-wrap: anywhere; user-select: all;
+}
+
 /* ---------- Search engines ---------- */
 .sk-list > .sk-switchrow { border-bottom: 1px solid var(--rule); }
 .sk-list > .sk-switchrow:last-child { border-bottom: 0; }
@@ -283,9 +298,10 @@ div.pressedKey kbd.sk-keyselected { background: var(--sel); }
 .sk-pagenote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .sk-pagenote p { flex: 1 1 280px; margin: 0; }
 .sk-steps { margin: 4px 0 8px; padding-left: 20px; }
-.sk-userscripts-state { font-weight: 500; }
-.sk-userscripts-state::before { content: "○ "; }
-.sk-userscripts-state.sk-ok::before { content: "● "; color: var(--green, currentColor); }
+/* a state line: User scripts (Advanced), and whether the new tab is the page (New tab page) */
+.sk-userscripts-state, .sk-ntp-state { font-weight: 500; }
+.sk-userscripts-state::before, .sk-ntp-state::before { content: "○ "; }
+.sk-userscripts-state.sk-ok::before, .sk-ntp-state.sk-ok::before { content: "● "; color: var(--green, currentColor); }
 .sk-loadrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 .sk-loadrow:has(> :not([hidden])) { margin-bottom: 4px; }
 .sk-loadstatus { flex: 1 1 240px; margin: 0; color: var(--muted); overflow-wrap: anywhere; }

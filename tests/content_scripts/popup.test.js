@@ -6,6 +6,10 @@ import { NO_THEME, PALETTES, THEME_IDS } from '../../src/content_scripts/common/
 
 const POPUP_HTML = fs.readFileSync(path.join(__dirname, '../../src/pages/popup.html'), 'utf8');
 
+// the browser, and so the build, the popup runs in (jsdom's user agent names none)
+let mockBrowserName = 'Chrome';
+jest.mock('../../src/content_scripts/common/browserName.js', () => ({getBrowserName: () => mockBrowserName}));
+
 function makeEvent() {
     const listeners = [];
     return {listeners, addListener: jest.fn((fn) => listeners.push(fn)), fire: (...args) => listeners.forEach((fn) => fn(...args))};
@@ -66,6 +70,7 @@ function mockChrome({url = 'https://github.com/brookhong/Surfingkeys', blocklist
 }
 
 function openPopup(opts) {
+    mockBrowserName = (opts && opts.browser) || 'Chrome';
     const sent = mockChrome(opts);
     document.documentElement.innerHTML = POPUP_HTML.replace(/<script[^>]*><\/script>/g, '');
     window.close = jest.fn();
@@ -326,5 +331,17 @@ describe('popup', () => {
         const hrefs = [...document.querySelectorAll('nav a')].map((a) => a.getAttribute('href'));
         expect(hrefs).toEqual(expect.arrayContaining(['options.html', 'options.html#appearance', 'options.html#keys', 'options.html#sites', 'start.html#welcome']));
         expect(document.getElementById('reportIssue').href).toMatch(/^https:\/\/github\.com\/hoangtrung99\/Surfingkeys\/issues\/new\?body=.*1\.2\.3/);
+    });
+
+    test('links to the new tab page\'s setup in the Chromium build', () => {
+        const {$} = openPopup();
+        expect($('newTabLink').hidden).toBe(false);
+        expect($('newTabLink').getAttribute('href')).toBe('options.html#newtab');
+        expect($('newTabLink').textContent).toBe('New tab page');
+    });
+
+    test.each(['Firefox', 'Safari', 'Safari-iOS'])('leaves that link out in %s, whose build has no new tab page', (browser) => {
+        const {$} = openPopup({browser});
+        expect($('newTabLink').hidden).toBe(true);
     });
 });

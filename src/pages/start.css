@@ -165,6 +165,13 @@ kbd {
 .sk_card .sk_swatches {
     margin: 14px 4px 10px;
 }
+/* the new tab page, after the three cards: a card of its own across the row */
+.sk_card_wide {
+    margin: 0 0 24px;
+}
+.sk_card_wide p:last-child {
+    margin-bottom: 0;
+}
 .sk_fix {
     display: flex;
     flex-wrap: wrap;

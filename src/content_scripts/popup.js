@@ -5,6 +5,7 @@
 // Opening it changes no setting, only using a control does: other tools open
 // this page just to message the background from an extension page.
 import { RUNTIME } from './common/runtime.js';
+import { shipsNewTabPage } from './common/newTabPage.js';
 import {
     IN_PAGE_PALETTE_KEY,
     createThemePicker,
@@ -32,6 +33,7 @@ let ownPage = false;
 let patterns = {};
 
 $('version').textContent = version;
+$('newTabLink').hidden = !shipsNewTabPage();
 
 function say(text) {
     $('status').textContent = text;

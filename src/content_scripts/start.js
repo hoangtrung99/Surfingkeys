@@ -3,6 +3,7 @@ import {
     setSanitizedContent,
 } from './common/utils.js';
 import { marked } from 'marked';
+import { guideForBuild, shipsNewTabPage } from './common/newTabPage.js';
 import { pageTokens, watchTheme } from './common/quickControls.js';
 import { renderTopSites } from './common/topSites.js';
 import createWelcome from './welcome.js';
@@ -41,7 +42,8 @@ setTimeout(() => document.body.classList.add('sk_ready'), 300);
 
 RUNTIME("getTopSites", null, function(response) {
     renderTopSites(document.querySelector("#topSites>ul"), response.urls);
-    var source = document.getElementById('quickIntroSource').innerHTML;
+    // a build without the new tab page leaves out the guide's link to its setup
+    var source = guideForBuild(document.getElementById('quickIntroSource').innerHTML, shipsNewTabPage());
     setSanitizedContent(document.querySelector('#quickIntro'), marked.parse(source));
 
     guideReady = true;

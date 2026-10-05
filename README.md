@@ -44,18 +44,28 @@ Opens once, right after install (and any time from the popup's *Getting started*
 
 A start page (Chromium builds) with your bookmarks bar and your top sites, in the theme you picked, and Surfingkeys' keys working the moment it opens: <kbd>f</kbd> reaches every bookmark and folder, <kbd>t</kbd> opens a URL. Folders open as dropdowns and folders inside them as cascading submenus; what does not fit in the row goes into a <kbd>»</kbd> menu, as on Chrome's own bar, and the bar follows your bookmark changes as you make them. `chrome://` and `file://` bookmarks open too; bookmarklets are listed but cannot run from this page.
 
-Surfingkeys does not take over the new tab page by itself. In **Helium**:
+Surfingkeys does not take over the new tab page by itself. The easiest way to turn it on is **Settings → New tab page** (<kbd>;e</kbd>, or *New tab page* in the toolbar popup): it shows the page's address with a *Copy* button, opens the browser pages the steps below need, previews the page, and says once the page has opened as your new tab. The same steps by hand:
+
+**Every new tab, in Helium:**
 
 1. Open `helium://flags/#custom-ntp` and set *Custom New Tab Page* to `chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/pages/newtab.html`. That ID is the release `.zip`'s. This fork's Chrome Web Store build, *Surfingkeys Palette*, has another one, shown under its name in `helium://extensions`. Upstream's Surfingkeys, the store listing under [Installation](#installation), has neither this page nor <kbd>gP</kbd>.
 2. Relaunch Helium.
 3. No prompt about your new tab page is expected. Should one appear, click nothing in it: its *Change it back* turns off all of Surfingkeys, not only this page.
+
+**When the browser starts, in Helium or any other Chromium browser.** This is separate from the flag: use either one, or both.
+
+1. Open the browser's settings at *On startup* (`chrome://settings/onStartup`, `helium://settings/onStartup` in Helium).
+2. Choose *Open a specific page or set of pages*, click *Add a new page* and paste the page's address. The address ending in `?focus` works as well.
+3. Click *Add*.
+
+This takes the place of *Continue where you left off*, so the browser no longer reopens the last session's tabs: press <kbd>ZR</kbd> on the start page to restore the session Surfingkeys saved with <kbd>ZZ</kbd>.
 
 Good to know:
 
 - The keyboard starts in the page, not in the address bar, which shows the page's `chrome-extension://` address. <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>T</kbd> and then typing no longer types a URL: press <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>L</kbd> first, or use <kbd>t</kbd>.
 - Helium uses the flag in incognito windows too, where the page loads only if Surfingkeys is allowed in incognito (`helium://extensions` → Surfingkeys → *Details* → *Allow in Incognito*).
 - Your settings script (Advanced mode) does not run on Surfingkeys' own pages, the help page alike, so its mappings are missing here: the browser lets no user script into extension pages. Basic mode's remaps (Settings → Keys) work here as everywhere.
-- Plain Chrome has no such flag: open the page at the address above, bookmark it, or make it the startup page (Settings → *On startup* → *Open a specific page*).
+- Other Chromium browsers, plain Chrome included, have no such flag: open the page when the browser starts (above), or open it at its address and bookmark it.
 - Session save (`ZZ`, `createSession`) skips the page like any new tab, and restoring a session closes it.
 
 ### Toolbar popup
@@ -78,6 +88,7 @@ A new settings page replaces upstream's single long form. Open it with <kbd>;e</
 |:--|:--|
 | **Appearance** | Theme cards with live previews of the palette, plus the Auto light/dark pair. |
 | **Keys** | The browser shortcuts and whether they are assigned, then every mapping, searchable, with change / disable / reset per key and conflict hints. |
+| **New tab page** | The steps that make the [new tab page](#new-tab-page) Helium's new tab or open it when the browser starts, with the page's address to copy, a preview, and whether it has opened as your new tab yet (Chromium builds). |
 | **Search engines** | The search aliases (<kbd>o</kbd>+letter in the omnibar, <kbd>s</kbd>+letter on a selection), each with its own switch. |
 | **Sites** | Where Surfingkeys is turned off, and where selecting text with the mouse searches it. |
 | **Advanced** | The settings script editor, with lint, an unsaved-change guard and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd> to save; the switch that runs it, and *Load settings from*. |

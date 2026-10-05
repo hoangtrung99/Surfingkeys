@@ -3,6 +3,8 @@
 // themes, with the live state of their browser shortcuts. Chrome leaves a
 // shortcut without a key, silently, when another extension or the browser
 // already holds it, and this is where the user learns that and fixes it.
+// Chromium builds also point to the new tab page's setup.
+import { shipsNewTabPage } from './common/newTabPage.js';
 import {
     IN_PAGE_PALETTE_KEY,
     createThemePicker,
@@ -15,6 +17,8 @@ import {
 
 export default function createWelcome(section) {
     const $ = (id) => document.getElementById(id);
+
+    $('welcomeNewTab').hidden = !shipsNewTabPage();
 
     function keyLine(el, s, what) {
         el.textContent = '';

@@ -5,7 +5,8 @@
 //   id        its #hash (options.html#keys) and the key it is remembered by
 //   title     its sidebar label and heading
 //   keywords  optional: more words "Find a setting" matches the whole section by
-//   available optional: false leaves the section out (Proxy outside Chrome)
+//   available optional: false leaves the section out (Proxy and New tab page
+//             outside Chrome)
 //   create    builds the section's content into `root`, under its heading, and
 //             returns its hooks, each optional:
 //               onDefaults({normal, api})  the default mappings, before any remap
@@ -19,6 +20,7 @@
 // is mostly a preview). shell.js documents ctx.
 import appearance from './appearance.js';
 import keys from './keys.js';
+import newtab from './newtab.js';
 import search from './search.js';
 import sites from './sites.js';
 import advanced from './advanced.js';
@@ -26,4 +28,4 @@ import proxy from './proxy.js';
 import backup from './backup.js';
 import about from './about.js';
 
-export default [appearance, keys, search, sites, advanced, proxy, backup, about];
+export default [appearance, keys, newtab, search, sites, advanced, proxy, backup, about];

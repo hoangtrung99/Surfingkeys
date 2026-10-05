@@ -5,7 +5,12 @@ import path from 'path';
 
 const START_HTML = fs.readFileSync(path.join(__dirname, '../../src/pages/start.html'), 'utf8');
 
-function setup(commands) {
+// the browser, and so the build, the page runs in (jsdom's user agent names none)
+let mockBrowserName = 'Chrome';
+jest.mock('../../src/content_scripts/common/browserName.js', () => ({getBrowserName: () => mockBrowserName}));
+
+function setup(commands, browser = 'Chrome') {
+    mockBrowserName = browser;
     const sent = [];
     let current = commands;
     global.chrome = {
@@ -91,5 +96,16 @@ describe('welcome', () => {
         welcome.show(false);
         expect($('welcome').hidden).toBe(true);
         expect(document.title).toBe('Surfingkeys');
+    });
+
+    test('points to the new tab page\'s setup in the Chromium build', () => {
+        const {$} = setup(ASSIGNED);
+        expect($('welcomeNewTab').hidden).toBe(false);
+        expect($('welcomeNewTab').querySelector('a').getAttribute('href')).toBe('options.html#newtab');
+    });
+
+    test.each(['Firefox', 'Safari', 'Safari-iOS'])('leaves the new tab page out in %s, whose build has no page', (browser) => {
+        const {$} = setup(ASSIGNED, browser);
+        expect($('welcomeNewTab').hidden).toBe(true);
     });
 });

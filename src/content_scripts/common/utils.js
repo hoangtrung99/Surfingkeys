@@ -2,6 +2,7 @@ import KeyboardUtils from './keyboardUtils';
 import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import { snippetsRevision } from '../../common/utils.js';
 import { faviconUrl } from './favicon.js';
+import { getBrowserName } from './browserName.js';
 
 const colors = [
     '#4169E1', // Royal Blue
@@ -177,24 +178,6 @@ function applyUserSettings(delta) {
     if (!isEmptyObject(delta.settings)) {
         dispatchSKEvent("front", ['applySettingsFromSnippets', delta.settings]);
     }
-}
-
-/**
- * Get current browser name
- * @returns {string} "Chrome" | "Firefox" | "Safari"
- *
- */
-function getBrowserName() {
-    if (window.navigator.userAgent.indexOf("Chrome") !== -1) {
-        return "Chrome";
-    } else if (window.navigator.vendor.indexOf("Apple Computer, Inc.") === 0) {
-        let isIOS = /iPad|iPhone|iPod/.test(navigator.platform)
-            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        return isIOS ? "Safari-iOS" : "Safari";
-    } else if (window.navigator.userAgent.indexOf("Firefox") !== -1) {
-        return "Firefox";
-    }
-    return "Chrome";
 }
 
 function isInUIFrame() {

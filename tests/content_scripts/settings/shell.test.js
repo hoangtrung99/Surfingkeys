@@ -15,7 +15,7 @@ jest.mock('../../../src/content_scripts/common/runtime.js', () => ({
 }));
 
 const HTML = fs.readFileSync(path.join(__dirname, '../../../src/pages/options.html'), 'utf8');
-const SECTIONS = ['appearance', 'keys', 'search', 'sites', 'advanced', 'proxy', 'backup', 'about'];
+const SECTIONS = ['appearance', 'keys', 'newtab', 'search', 'sites', 'advanced', 'proxy', 'backup', 'about'];
 
 // the Mode surface the Keys section's key picker uses
 let modes;
