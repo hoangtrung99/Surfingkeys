@@ -59,6 +59,7 @@ for b in $browsers; do
 {
     "allowed_origins": [
         "chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/",
+        "chrome-extension://jmblmhjmcjjkjddhjaddkbkpgeolmebm/",
         "chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/"
     ],
     "description": "Surfingkeys native host: neovim, ~/.surfingkeys.js and browser profiles",

@@ -1,8 +1,9 @@
 name: Release
 
-# Every push to master publishes a release with two downloads: the Chromium
-# package (surfingkeys-palette-<tag>.zip) and the native messaging host with its
-# installer (surfingkeys-native-host-<tag>.zip). The tag is the next
+# Every push to master publishes a release with three downloads: the Chromium
+# package (surfingkeys-palette-<tag>.zip), the native messaging host with its
+# installer (surfingkeys-native-host-<tag>.zip), and the package to upload to the
+# Chrome Web Store (surfingkeys-palette-chrome-web-store-<tag>.zip). The tag is the next
 # v<package.json version>-palette.N. The notes are .github/release-notes/<tag>.md
 # when that file exists (title on the first line, a blank line, then the notes),
 # else the commits since the previous release. Run workflow (Actions tab) retries
@@ -53,6 +54,7 @@ jobs:
       run: |
         npm install
         npm run build
+        npm run build:store
       env:
         CI: true
     - name: publish
@@ -63,6 +65,7 @@ jobs:
         PREV: ${{ steps.tag.outputs.prev }}
       run: |
         cp dist/production/chrome/sk.zip "surfingkeys-palette-$TAG.zip"
+        cp dist/store/chrome/sk.zip "surfingkeys-palette-chrome-web-store-$TAG.zip"
 
         host=surfingkeys-native-host
         mkdir "$host"
@@ -87,10 +90,13 @@ jobs:
             echo "### Install"
             echo "1. Download \`surfingkeys-palette-$TAG.zip\`, unzip it, open \`chrome://extensions\`, turn on **Developer mode** and click **Load unpacked** on the folder (or replace the folder of an existing install and click **Reload**)."
             echo "2. For switching profiles (\`gP\`) and other profiles' tabs in the palette: install neovim, download \`$host-$TAG.zip\`, unzip it and run \`sh install.sh\` in it, then quit and reopen the browser."
+            echo
+            echo "\`surfingkeys-palette-chrome-web-store-$TAG.zip\` is the package uploaded to the Chrome Web Store; to install, use the store or the zip above."
           } > notes.md
         fi
         if [ -n "$PREV" ]; then
           printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$PREV" "$TAG" >> notes.md
         fi
         gh release create "$TAG" "surfingkeys-palette-$TAG.zip" "$host-$TAG.zip" \
+          "surfingkeys-palette-chrome-web-store-$TAG.zip" \
           --target "$GITHUB_SHA" --title "${title:-$TAG}" --notes-file notes.md

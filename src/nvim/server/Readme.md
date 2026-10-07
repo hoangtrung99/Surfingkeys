@@ -43,6 +43,7 @@ The sections below do the same by hand, and cover Windows and Firefox.
         {
             "allowed_origins": [
                 "chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/",
+                "chrome-extension://jmblmhjmcjjkjddhjaddkbkpgeolmebm/",
                 "chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/"
             ],
             "description": "Neovim UI client from Surfingkeys",
@@ -101,6 +102,7 @@ The sections below do the same by hand, and cover Windows and Firefox.
         {
             "allowed_origins": [
                 "chrome-extension://aajlcoiaogpknhgninhopncaldipjdnp/",
+                "chrome-extension://jmblmhjmcjjkjddhjaddkbkpgeolmebm/",
                 "chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/"
             ],
             "description": "Neovim UI client from Surfingkeys",
@@ -110,9 +112,8 @@ The sections below do the same by hand, and cover Windows and Firefox.
         }
 
     The unpacked build (from Releases or `npm run build`) always has the id
-    `aajlcoiaogpknhgninhopncaldipjdnp`, the first one listed. The Chrome Web Store
-    build ("Surfingkeys Palette") has its own: add the id `chrome://extensions` shows
-    for it to `allowed_origins`.
+    `aajlcoiaogpknhgninhopncaldipjdnp`, the first one listed; the Chrome Web Store
+    build ("Surfingkeys Palette") has `jmblmhjmcjjkjddhjaddkbkpgeolmebm`, the second. `install.sh` lists both.
 
     **Chromium User Data Directory**
     ### Mac OS X

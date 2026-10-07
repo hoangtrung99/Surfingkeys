@@ -17,10 +17,10 @@ npm run build:store     # dist/store/chrome: name "Surfingkeys Palette", its own
 
 The store build differs from `build:prod` only in the manifest (name, description, homepage, no `key`) and the icons (`src/icons-store`, rendered from `icon.svg` by the theme repo's `tools/store_icons.py`). Without the `key`, the store assigns the extension a new ID.
 
-## After the first upload
+## The store's extension ID
 
-The store's extension ID is not upstream's, so the Neovim host (`src/nvim/server/NativeMessagingHosts/Surfingkeys.json`) must list it too: add `chrome-extension://<new id>/` to `allowed_origins`.
+The listing is https://chromewebstore.google.com/detail/surfingkeys-palette/jmblmhjmcjjkjddhjaddkbkpgeolmebm. That ID is not the unpacked build's, so the native host lists both in `allowed_origins` (`src/nvim/server/install.sh`, `src/nvim/server/NativeMessagingHosts/Surfingkeys.json`).
 
 ## Updating
 
-Bump `version` in `package.json` (the store refuses a version it already has), rebuild, zip, and upload on the dashboard's Package tab.
+Bump `version` in `package.json`: the store refuses a version it already has. Every push to master then publishes a release (`.github/workflows/release.yml`) whose `surfingkeys-palette-chrome-web-store-<tag>.zip` is this package: upload it on the dashboard's Package tab and submit it for review.

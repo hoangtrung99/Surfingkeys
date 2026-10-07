@@ -27,6 +27,12 @@ Catppuccin Mocha and Latte, Tokyo Night, Rosé Pine and Dawn, Nord, Dracula, Gru
 VIM-STYLE KEYS (from Surfingkeys)
 Link hints (f), scrolling (j/k, d/u), tab keys, the omnibar (t, b, o), visual mode for selecting text, marks, sessions, a Vim or Emacs editor for any text box, a Markdown preview, a PDF viewer, page capture and more. Press ? on any page for the full list.
 
+NEW TAB PAGE
+A start page with your bookmarks bar (folders open as menus) and your top sites, where the keys work the moment it opens. Settings → New tab page shows how to make it your new tab (Helium) or the page your browser opens at startup.
+
+SWITCH PROFILES (gP)
+With the optional native helper (macOS, Linux), gP lists your browser's profiles and brings the one you pick forward.
+
 SETTINGS, WELCOME PAGE AND POPUP
 A settings page with sections for appearance, keys (change, turn off or reset any key), search engines, sites, a settings script editor, proxy and backup (export and import). A welcome page on install. A toolbar popup to turn it off for a site and switch themes.
 
